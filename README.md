@@ -2,10 +2,10 @@
 
 This project simulates two town utilities on an RP2040 (Raspberry Pi Pico):
 
-- Water (blue LEDs): flow brightness + 5-LED resource gauge
-- Electricity (red LEDs): flow brightness + 5-LED resource gauge
+- Water: blue NeoPixel flow strip + 3-LED discrete resource gauge
+- Electricity: red NeoPixel flow strip + 3-LED discrete resource gauge
 
-This version is designed for 20-30 total LEDs using two NeoPixel/WS2812 strips with external 5V power.
+This version uses two NeoPixel/WS2812 strips for flow effects (external 5V power) and simple GPIO LEDs for gauge indicators.
 
 ## Files
 
@@ -24,7 +24,13 @@ This version is designed for 20-30 total LEDs using two NeoPixel/WS2812 strips w
 - Water strip data in -> GP2
 - Electricity strip data in -> GP3
 - `main.py` default per strip:
-  - 15 flow LEDs + 5 gauge LEDs = 20 LEDs total per strip
+  - 15 flow LEDs per strip (gauge is separate, non-NeoPixel)
+
+### Gauge LEDs (standard LEDs, non-NeoPixel)
+
+- Water gauge LEDs -> GP6, GP7, GP8
+- Electricity gauge LEDs -> GP9, GP10, GP11
+- Use one series resistor per LED (typically 220-470 ohm)
 
 You can change counts/pins near the top of `main.py`.
 
@@ -51,7 +57,6 @@ These constants are near the top of `main.py`:
 - `MAX_REFILL_PER_SEC` (higher = refills faster)
 - `SMOOTH_ALPHA` (knob smoothing response)
 - `FLOW_BRIGHTNESS_CAP` (limits flow LED current)
-- `GAUGE_BRIGHTNESS_CAP` (limits gauge LED current)
 - `LOOP_MS` (control loop period)
 
 ## Flashing to Pico
@@ -67,7 +72,9 @@ These constants are near the top of `main.py`:
 
 - 1x Raspberry Pi Pico / Pico W
 - 2x 10k potentiometers (knobs)
-- 2x NeoPixel/WS2812 strips (or one strip cut into 2 runs)
+- 2x NeoPixel/WS2812 strips (or one strip cut into 2 runs) for flow LEDs
+- 6x standard LEDs for gauges (3 water + 3 electricity)
+- 6x 220-470 ohm resistors for gauge LEDs
 - 1x regulated 5V power supply (recommended 2A or higher)
 - 2x 330 ohm resistors (one in series with each data line)
 - 1x 1000 uF electrolytic capacitor (across +5V and GND near LED power input)
@@ -101,7 +108,11 @@ These constants are near the top of `main.py`:
 5. Potentiometers:
    - Pot #1 center -> GP26, outer pins -> 3V3 and GND
    - Pot #2 center -> GP27, outer pins -> 3V3 and GND
-6. Optional level shifting:
+6. Gauge LEDs (standard LEDs):
+   - Water gauge LEDs anodes -> GP6, GP7, GP8 through 220-470 ohm series resistors
+   - Power gauge LEDs anodes -> GP9, GP10, GP11 through 220-470 ohm series resistors
+   - LED cathodes -> GND
+7. Optional level shifting:
    - Insert 74AHCT125/74HCT245 between Pico data pins and strip DIN pins for robust signaling.
 
 ### Safety notes

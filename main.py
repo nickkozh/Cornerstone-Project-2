@@ -12,17 +12,17 @@ POWER_KNOB_ADC_PIN = 27  # ADC1
 WATER_STRIP_PIN = 2
 POWER_STRIP_PIN = 3
 
-# LEDs per strip:
-# [flow wire LEDs..., 5 gauge LEDs]
+# LEDs per strip (flow only)
 WATER_FLOW_LED_COUNT = 15
 POWER_FLOW_LED_COUNT = 15
-GAUGE_LED_COUNT = 5
+
+# Discrete gauge LEDs (standard LEDs, not NeoPixels)
+WATER_GAUGE_LED_PINS = (6, 7, 8)
+POWER_GAUGE_LED_PINS = (9, 10, 11)
 
 # NeoPixel color config
 WATER_FLOW_COLOR = (0, 0, 255)   # blue
 POWER_FLOW_COLOR = (255, 0, 0)   # red
-WATER_GAUGE_COLOR = (0, 60, 255)
-POWER_GAUGE_COLOR = (255, 40, 0)
 
 # ---------- TUNING ----------
 LOOP_MS = 50  # update every 50 ms
@@ -40,10 +40,9 @@ SMOOTH_ALPHA = 0.18
 # Deadband around low ADC values to reduce idle flicker
 ZERO_DEADBAND_PCT = 1.5
 
-# Global brightness caps for current control.
+# Global brightness cap for flow NeoPixels current control.
 # 1.0 means full configured RGB values; lower is safer for power.
 FLOW_BRIGHTNESS_CAP = 0.35
-GAUGE_BRIGHTNESS_CAP = 0.25
 
 
 class UtilitySystem:
@@ -52,20 +51,19 @@ class UtilitySystem:
         knob_adc_pin,
         strip_pin,
         flow_led_count,
-        gauge_led_count,
+        gauge_led_pins,
         flow_color,
-        gauge_color,
         name="utility",
     ):
         self.name = name
         self.adc = ADC(knob_adc_pin)
 
         self.flow_led_count = flow_led_count
-        self.gauge_led_count = gauge_led_count
-        self.total_led_count = flow_led_count + gauge_led_count
+        self.total_led_count = flow_led_count
         self.flow_color = flow_color
-        self.gauge_color = gauge_color
         self.strip = neopixel.NeoPixel(Pin(strip_pin, Pin.OUT), self.total_led_count)
+        self.gauge_leds = [Pin(pin, Pin.OUT) for pin in gauge_led_pins]
+        self.gauge_led_count = len(self.gauge_leds)
 
         self.level = 100.0  # resource level (0..100)
         self.flow_pct_smoothed = 0.0
@@ -76,6 +74,8 @@ class UtilitySystem:
         for i in range(self.total_led_count):
             self.strip[i] = (0, 0, 0)
         self.strip.write()
+        for led in self.gauge_leds:
+            led.value(0)
 
     def _read_knob_pct(self):
         raw = self.adc.read_u16()  # 0..65535
@@ -100,15 +100,11 @@ class UtilitySystem:
             self.strip[i] = flow_rgb
 
     def _set_gauge_from_level(self):
-        # 0..100 mapped to 0..5 LEDs
-        leds_on = int(math.ceil(self.level / 20.0))
+        # 0..100 mapped to 0..N discrete LEDs
+        leds_on = int(math.ceil((self.level / 100.0) * self.gauge_led_count))
         leds_on = max(0, min(self.gauge_led_count, leds_on))
-        on_rgb = self._scale_color(self.gauge_color, GAUGE_BRIGHTNESS_CAP)
-        off_rgb = (0, 0, 0)
-
-        for index in range(self.gauge_led_count):
-            strip_index = self.flow_led_count + index
-            self.strip[strip_index] = on_rgb if index < leds_on else off_rgb
+        for index, led in enumerate(self.gauge_leds):
+            led.value(1 if index < leds_on else 0)
 
     def update(self, dt_sec):
         # 1) Read and smooth knob -> target flow %
@@ -148,9 +144,8 @@ def main():
         knob_adc_pin=WATER_KNOB_ADC_PIN,
         strip_pin=WATER_STRIP_PIN,
         flow_led_count=WATER_FLOW_LED_COUNT,
-        gauge_led_count=GAUGE_LED_COUNT,
+        gauge_led_pins=WATER_GAUGE_LED_PINS,
         flow_color=WATER_FLOW_COLOR,
-        gauge_color=WATER_GAUGE_COLOR,
         name="water",
     )
 
@@ -158,9 +153,8 @@ def main():
         knob_adc_pin=POWER_KNOB_ADC_PIN,
         strip_pin=POWER_STRIP_PIN,
         flow_led_count=POWER_FLOW_LED_COUNT,
-        gauge_led_count=GAUGE_LED_COUNT,
+        gauge_led_pins=POWER_GAUGE_LED_PINS,
         flow_color=POWER_FLOW_COLOR,
-        gauge_color=POWER_GAUGE_COLOR,
         name="power",
     )
 
