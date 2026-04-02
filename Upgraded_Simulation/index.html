@@ -193,7 +193,7 @@
         <span class="dial-label">Slider (use)</span>
         <span class="dial-label" id="elec-spend-val">0%</span>
       </div>
-      <input type="range" min="0" max="100" value="0" step="1" id="elec-slider" />
+      <input type="range" min="0" max="100" value="20" step="1" id="elec-slider" />
       <div class="warn-bars">
         <div class="warn-row">
           <span class="warn-lbl">too high</span>
@@ -224,7 +224,7 @@
         <span class="dial-label">Slider (use)</span>
         <span class="dial-label" id="water-spend-val">0%</span>
       </div>
-      <input type="range" min="0" max="100" value="0" step="1" id="water-slider" />
+      <input type="range" min="0" max="100" value="20" step="1" id="water-slider" />
       <div class="warn-bars">
         <div class="warn-row">
           <span class="warn-lbl">too high</span>
@@ -300,7 +300,7 @@ const DT         = 0.05;  // simulation step (s)
 /* ─── State ─────────────────────────────────────────────── */
 let S = {
   elec: 100, water: 100,
-  es: 0, ws: 0,
+  es: 20, ws: 20,
   sp: 2, wt: 1,
   ec: 0, wc: 0,
   eb: 0, wd: 0,       // overuse event countdowns
