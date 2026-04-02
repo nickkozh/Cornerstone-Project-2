@@ -196,4 +196,24 @@ multiplier = 1.0 + (towers − 1) × 0.3
 open index.html
 ```
 
-No server, no dependencies. Open directly in any browser. Sliders simulate the potentiometers.
+### Quick start (easy version)
+
+- Open `index.html` in a web browser (Chrome, Edge, Safari, Firefox).
+- Use the two sliders. They work like the real knobs.
+  - Higher slider = brighter light = you’re using more of that resource.
+  - Lower slider = dimmer light = you’re using less.
+- Your goal is to keep **both** resources healthy and earn cards for upgrades.
+
+### How to open it
+
+You don’t need a server or any installs.
+
+- **Mac**: double-click `index.html` (or right-click → Open With → your browser)
+- **Windows**: double-click `index.html`
+- **Chromebook**: open `index.html` from the Files app
+
+### Controls
+
+- The sliders are the **potentiometers**.
+- The bars/percent numbers are your **resource levels**.
+- The card counters show how many upgrade cards you’ve earned.

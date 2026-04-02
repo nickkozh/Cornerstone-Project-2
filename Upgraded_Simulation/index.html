@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Resource Balance — Cornerstone Simulator</title>
+  <title>Resource Balance — Cornerstone P2 Simulator</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -164,14 +164,14 @@
 <div class="app">
 
   <h1>Resource Balance</h1>
-  <p class="subtitle">Too high burns out. Too low stagnates. Find the balance.</p>
+  <p class="subtitle">Keep both meters happy. Too high drains fast. Too low causes problems.</p>
 
   <p class="zone-hint">
-    <span class="danger-lo">below 10% → stagnation</span>
+    <span class="danger-lo">below 10% → too low</span>
     &nbsp;·&nbsp;
-    <span class="sweet">10–35% → regen + cards</span>
+    <span class="sweet">10–35% → best zone (earn cards)</span>
     &nbsp;·&nbsp;
-    <span class="danger-hi">above 35% → drain</span>
+    <span class="danger-hi">above 35% → too high (drains)</span>
   </p>
 
   <div class="section grid2">
@@ -190,17 +190,17 @@
         <div class="bar-fill" id="elec-bar" style="width:100%; background:#c8910a;"></div>
       </div>
       <div class="dial-row">
-        <span class="dial-label">Dial (spend)</span>
+        <span class="dial-label">Slider (use)</span>
         <span class="dial-label" id="elec-spend-val">0%</span>
       </div>
       <input type="range" min="0" max="100" value="0" step="1" id="elec-slider" />
       <div class="warn-bars">
         <div class="warn-row">
-          <span class="warn-lbl">overuse</span>
+          <span class="warn-lbl">too high</span>
           <div class="warn-bar-bg"><div class="warn-bar-fill" id="elec-over-bar" style="width:0%; background:#e24b4a;"></div></div>
         </div>
         <div class="warn-row">
-          <span class="warn-lbl">stagnation</span>
+          <span class="warn-lbl">too low</span>
           <div class="warn-bar-bg"><div class="warn-bar-fill" id="elec-stag-bar" style="width:0%; background:#ba7517;"></div></div>
         </div>
       </div>
@@ -221,17 +221,17 @@
         <div class="bar-fill" id="water-bar" style="width:100%; background:#1a78c2;"></div>
       </div>
       <div class="dial-row">
-        <span class="dial-label">Dial (spend)</span>
+        <span class="dial-label">Slider (use)</span>
         <span class="dial-label" id="water-spend-val">0%</span>
       </div>
       <input type="range" min="0" max="100" value="0" step="1" id="water-slider" />
       <div class="warn-bars">
         <div class="warn-row">
-          <span class="warn-lbl">overuse</span>
+          <span class="warn-lbl">too high</span>
           <div class="warn-bar-bg"><div class="warn-bar-fill" id="water-over-bar" style="width:0%; background:#e24b4a;"></div></div>
         </div>
         <div class="warn-row">
-          <span class="warn-lbl">stagnation</span>
+          <span class="warn-lbl">too low</span>
           <div class="warn-bar-bg"><div class="warn-bar-fill" id="water-stag-bar" style="width:0%; background:#ba7517;"></div></div>
         </div>
       </div>
@@ -253,7 +253,7 @@
       <div class="metric-sub" id="tower-mult">1.0× regen</div>
     </div>
     <div class="metric-card">
-      <div class="metric-label">Elec cards</div>
+      <div class="metric-label">Electricity cards</div>
       <div class="metric-val" id="stat-ec" style="color:#c8910a;">0</div>
       <div class="mini-bar-bg"><div class="mini-bar-fill" id="ec-prog" style="width:0%; background:#c8910a;"></div></div>
     </div>
@@ -267,12 +267,12 @@
   <!-- Upgrades -->
   <div class="section grid2">
     <button id="btn-solar" onclick="buySolar()" disabled>
-      Buy solar panel<br>
-      <span class="btn-cost">3 elec cards + 1 water card &nbsp;(max 8)</span>
+      Buy a solar panel<br>
+      <span class="btn-cost">Cost: 3 electricity cards + 1 water card &nbsp;(max 8)</span>
     </button>
     <button id="btn-tower" onclick="buyTower()" disabled>
-      Buy water tower<br>
-      <span class="btn-cost">3 water cards + 1 elec card &nbsp;(max 4)</span>
+      Buy a water tower<br>
+      <span class="btn-cost">Cost: 3 water cards + 1 electricity card &nbsp;(max 4)</span>
     </button>
   </div>
 
@@ -339,7 +339,7 @@ function updateRes(isE) {
   if (S[bk] > 0) {
     S[bk] -= DT;
     S[rk] = Math.min(100, S[rk] + BLKOUT_RGN * DT);
-    if (S[bk] <= 0) { S[bk] = 0; log(isE ? 'Blackout ended — power restored' : 'Drought ended — water restored', 'ok'); }
+    if (S[bk] <= 0) { S[bk] = 0; log(isE ? 'Blackout over — electricity is back!' : 'Drought over — water is back!', 'ok'); }
     S[estk] = 0;
     return;
   }
@@ -348,7 +348,7 @@ function updateRes(isE) {
   if (S[sgk] > 0) {
     S[sgk] -= DT;
     S[rk] = Math.min(100, S[rk] + BLKOUT_RGN * DT);
-    if (S[sgk] <= 0) { S[sgk] = 0; log(isE ? 'Stagnation cleared — system stabilised' : 'Stagnation cleared — flow restored', 'ok'); }
+    if (S[sgk] <= 0) { S[sgk] = 0; log(isE ? 'Unstuck! Electricity is running again.' : 'Unstuck! Water is flowing again.', 'ok'); }
     S[estk] = 0;
     return;
   }
@@ -382,7 +382,7 @@ function updateRes(isE) {
     S[eltk] += DT;
     if (S[eltk] >= CRISIS_T) {
       S[eltk] = 0;
-      log(isE ? 'CRISIS: Chronic electricity shortage!' : 'CRISIS: Chronic water shortage!', 'bad');
+      log(isE ? 'Uh-oh: electricity stayed super low too long.' : 'Uh-oh: water stayed super low too long.', 'bad');
     }
   } else {
     S[eltk] = Math.max(0, S[eltk] - DT * 0.5);
@@ -393,7 +393,7 @@ function updateRes(isE) {
     S[ectk] += DT;
     if (S[ectk] >= CARD_INT) {
       S[ectk] = 0; S[ck]++;
-      log(isE ? `Earned electricity card (${S.ec}/10)` : `Earned water card (${S.wc}/10)`, 'ok');
+      log(isE ? `Got an electricity card! (${S.ec}/10)` : `Got a water card! (${S.wc}/10)`, 'ok');
     }
   } else {
     S[ectk] = Math.max(0, S[ectk] - DT * 0.5);
@@ -405,25 +405,25 @@ function trigBlackout() {
   if (S.eb > 0) return;
   S.eb = BLKOUT_DUR; S.es = 0;
   document.getElementById('elec-slider').value = 0;
-  log('BLACKOUT — electricity offline for 15s', 'bad');
+  log('BLACKOUT! Electricity is out for 15s.', 'bad');
 }
 function trigDrought() {
   if (S.wd > 0) return;
   S.wd = BLKOUT_DUR; S.ws = 0;
   document.getElementById('water-slider').value = 0;
-  log('DROUGHT — water offline for 15s', 'bad');
+  log('DROUGHT! Water is out for 15s.', 'bad');
 }
 function trigStag(isE) {
   if (isE) {
     if (S.stagE > 0) return;
     S.stagE = BLKOUT_DUR; S.es = 0;
     document.getElementById('elec-slider').value = 0;
-    log('STAGNATION — electrical system seized for 15s', 'warn');
+    log('Too low too long — electricity got stuck for 15s.', 'warn');
   } else {
     if (S.stagW > 0) return;
     S.stagW = BLKOUT_DUR; S.ws = 0;
     document.getElementById('water-slider').value = 0;
-    log('STAGNATION — water flow stagnated for 15s', 'warn');
+    log('Too low too long — water got stuck for 15s.', 'warn');
   }
 }
 
@@ -431,14 +431,14 @@ function trigStag(isE) {
 function buySolar() {
   if (S.ec >= 3 && S.wc >= 1 && S.sp < 8) {
     S.ec -= 3; S.wc -= 1; S.sp++;
-    log(`Bought solar panel — now ${S.sp}/8 (${solarMult(S.sp).toFixed(1)}× regen)`, 'ok');
+    log(`Solar panel bought! Now ${S.sp}/8 (${solarMult(S.sp).toFixed(1)}× regen)`, 'ok');
     render();
   }
 }
 function buyTower() {
   if (S.wc >= 3 && S.ec >= 1 && S.wt < 4) {
     S.wc -= 3; S.ec -= 1; S.wt++;
-    log(`Bought water tower — now ${S.wt}/4 (${towerMult(S.wt).toFixed(1)}× regen)`, 'ok');
+    log(`Water tower bought! Now ${S.wt}/4 (${towerMult(S.wt).toFixed(1)}× regen)`, 'ok');
     render();
   }
 }
@@ -473,10 +473,10 @@ function render() {
 
   /* Rate labels */
   function rateStr(sp, mul, locked, bkT, sgT) {
-    if (locked) return (bkT > 0 ? `locked: ${Math.ceil(bkT)}s` : `stagnation: ${Math.ceil(sgT)}s`);
-    if (sp > NT) return `-${(((sp-NT)/(100-NT))*DRAIN).toFixed(1)}%/s drain`;
-    if (sp >= LT) return `+${(((NT-sp)/(NT-LT))*REGEN*mul).toFixed(1)}%/s regen`;
-    return `-${(((LT-sp)/LT)*STAG_DRAIN).toFixed(1)}%/s stagnating`;
+    if (locked) return (bkT > 0 ? `locked (${Math.ceil(bkT)}s)` : `unsticking (${Math.ceil(sgT)}s)`);
+    if (sp > NT) return `draining ${(((sp-NT)/(100-NT))*DRAIN).toFixed(1)}%/s`;
+    if (sp >= LT) return `charging ${(((NT-sp)/(NT-LT))*REGEN*mul).toFixed(1)}%/s`;
+    return `leaking ${(((LT-sp)/LT)*STAG_DRAIN).toFixed(1)}%/s`;
   }
   function rateColor(sp, locked) {
     if (locked) return '#ba7517';
@@ -499,13 +499,13 @@ function render() {
 
   /* Status messages */
   function statusMsg(sp, res, locked, bkT, sgT, stagBuild, cardT, cards) {
-    if (bkT > 0) return `Blackout — ${Math.ceil(bkT)}s remaining`;
-    if (sgT > 0) return `Stagnation — ${Math.ceil(sgT)}s remaining`;
-    if (sp < LT) return `Too low — stagnation ${Math.round(stagBuild/STAG_T*100)}% built`;
-    if (sp > NT) return res < LOW_TH ? `CRITICAL — dial down immediately` : `Depleting — lower dial to regen`;
-    if (res > CARD_MIN && cards < 10) return `Card in ${Math.ceil(CARD_INT - cardT)}s`;
-    if (cards >= 10) return `Cards full`;
-    return `Resource too low for cards`;
+    if (bkT > 0) return `Blackout! ${Math.ceil(bkT)}s left`;
+    if (sgT > 0) return `Stuck! ${Math.ceil(sgT)}s left`;
+    if (sp < LT) return `Too low — “stuck” meter: ${Math.round(stagBuild/STAG_T*100)}%`;
+    if (sp > NT) return res < LOW_TH ? `Danger! Turn it down now.` : `Too high — turn down to recharge`;
+    if (res > CARD_MIN && cards < 10) return `Next card in ${Math.ceil(CARD_INT - cardT)}s`;
+    if (cards >= 10) return `Cards are full`;
+    return `Need 50%+ to earn cards`;
   }
   function statusColor(sp, res, locked) {
     if (locked || res < LOW_TH) return '#e24b4a';
@@ -556,7 +556,7 @@ document.getElementById('water-slider').addEventListener('input', e => {
 
 /* ─── Boot ──────────────────────────────────────────────── */
 render();
-log('Game started — sweet spot is 10–35% spend');
+log('Let’s play! Best zone is 10–35%.');
 setInterval(tick, DT * 1000);
 </script>
 </body>
