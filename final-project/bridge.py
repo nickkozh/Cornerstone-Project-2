@@ -13,6 +13,7 @@ Then open http://localhost:8080 in your browser.
 """
 
 import asyncio
+import csv
 import json
 import os
 import sys
@@ -25,18 +26,39 @@ import serial
 import serial.tools.list_ports
 
 # ── Config ────────────────────────────────────────────────────────────────────
-HTTP_PORT = 8080
-WS_PORT   = 8765
-WS_HOST   = 'localhost'
-BAUD      = 115200
-HTML_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'index.html')
+HTTP_PORT  = 8080
+WS_PORT    = 8765
+WS_HOST    = 'localhost'
+BAUD       = 115200
+HTML_FILE  = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'index.html')
+CSV_FILE   = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sessions.csv')
 
 # ── Shared state (thread-safe via asyncio primitives) ─────────────────────────
-_ws_clients: set = set()
-_latest: dict    = {}
-_ws_loop         = None    # set once the asyncio loop starts
-_ws_queue        = None    # asyncio.Queue, created inside the loop
-_ser_ref         = [None]  # mutable ref so ws_handler can reach the serial port
+_ws_clients: set  = set()
+_latest: dict     = {}
+_ws_loop          = None    # set once the asyncio loop starts
+_ws_queue         = None    # asyncio.Queue, created inside the loop
+_ser_ref          = [None]  # mutable ref so ws_handler can reach the serial port
+_session_start    = None    # time.time() snapshot when current session began
+
+
+# ── CSV session logger ─────────────────────────────────────────────────────────
+def _log_session(start_ts: float, end_ts: float):
+    duration_s = round(end_ts - start_ts)
+    mm, ss = divmod(duration_s, 60)
+    new_file = not os.path.exists(CSV_FILE)
+    with open(CSV_FILE, 'a', newline='') as f:
+        w = csv.writer(f)
+        if new_file:
+            w.writerow(['date', 'start_time', 'end_time', 'duration_s', 'duration_mm_ss'])
+        w.writerow([
+            time.strftime('%Y-%m-%d', time.localtime(start_ts)),
+            time.strftime('%H:%M:%S', time.localtime(start_ts)),
+            time.strftime('%H:%M:%S', time.localtime(end_ts)),
+            duration_s,
+            f'{mm}:{ss:02d}',
+        ])
+    print(f'[session] logged {mm}:{ss:02d} to {CSV_FILE}')
 
 
 # ── HTTP server ───────────────────────────────────────────────────────────────
@@ -104,13 +126,51 @@ async def _ws_handler(websocket):
             pass
     try:
         async for msg in websocket:
-            # Forward commands from browser → Pico over serial
-            ser = _ser_ref[0]
-            if ser and ser.is_open:
-                try:
-                    ser.write((msg + '\n').encode())
-                except Exception as e:
-                    print(f'[serial write] {e}', file=sys.stderr)
+            # Intercept session-control commands; others go straight to Pico
+            try:
+                parsed = json.loads(msg)
+                cmd = parsed.get('cmd', '')
+            except Exception:
+                parsed = {}; cmd = ''
+
+            if cmd == 'startGame':
+                global _session_start
+                _session_start = time.time()
+                print(f'[session] started at {time.strftime("%H:%M:%S")}')
+                # Tell Pico to reset game state
+                ser = _ser_ref[0]
+                if ser and ser.is_open:
+                    try:
+                        ser.write((json.dumps({'cmd': 'resetGame'}) + '\n').encode())
+                    except Exception as e:
+                        print(f'[serial write] {e}', file=sys.stderr)
+
+            elif cmd == 'endGame':
+                end_ts = time.time()
+                if _session_start is not None:
+                    _log_session(_session_start, end_ts)
+                    duration_s = round(end_ts - _session_start)
+                    _session_start = None
+                else:
+                    duration_s = 0
+                # Broadcast session_ended to all browsers
+                payload = json.dumps({'type': 'session_ended', 'duration_s': duration_s})
+                dead = set()
+                for ws in list(_ws_clients):
+                    try:
+                        await ws.send(payload)
+                    except Exception:
+                        dead.add(ws)
+                _ws_clients -= dead
+
+            else:
+                # Forward all other commands to Pico over serial
+                ser = _ser_ref[0]
+                if ser and ser.is_open:
+                    try:
+                        ser.write((msg + '\n').encode())
+                    except Exception as e:
+                        print(f'[serial write] {e}', file=sys.stderr)
     except Exception:
         pass
     finally:

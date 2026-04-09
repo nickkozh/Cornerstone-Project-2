@@ -218,6 +218,20 @@ def _handle_cmd(line):
             S['wc'] -= 3; S['ec'] -= 1; S['wt'] += 1
             _pending_evts.append('tower_bought')
 
+    elif c == 'resetGame':
+        S['e'] = 100.0; S['w'] = 100.0
+        S['es'] = 0.0;  S['ws'] = 0.0
+        S['sp'] = 2;    S['wt'] = 1
+        S['ec'] = 0;    S['wc'] = 0
+        S['eb'] = 0.0;  S['wd'] = 0.0
+        S['stagE'] = 0.0; S['stagW'] = 0.0
+        S['elt'] = 0.0; S['wlt'] = 0.0
+        S['est'] = 0.0; S['wst'] = 0.0
+        S['ect'] = 0.0; S['wct'] = 0.0
+        S['t'] = 0.0
+        S['_web_e'] = None; S['_web_w'] = None
+        _pending_evts.append('game_reset')
+
 def send_state(events):
     out = {
         'elec':  round(S['e'],     1), 'water': round(S['w'],     1),

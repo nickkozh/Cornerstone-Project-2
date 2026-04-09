@@ -178,10 +178,114 @@
     .zone-hint .sweet { color: #3d8c40; font-weight: 500; }
     .zone-hint .danger-lo { color: #ba7517; }
     .zone-hint .danger-hi { color: #e24b4a; }
+
+    /* ── Overlay screens ─────────────────────────────────────── */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      text-align: center;
+      z-index: 100;
+    }
+    .overlay.hidden { display: none; }
+
+    .overlay h2 { font-size: 28px; font-weight: 600; margin-bottom: 12px; }
+    .overlay .big-sub {
+      font-size: 15px;
+      color: var(--muted);
+      max-width: 380px;
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+    .overlay .rules {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--rad-lg);
+      padding: 16px 20px;
+      max-width: 380px;
+      text-align: left;
+      font-size: 13px;
+      line-height: 1.7;
+      color: var(--muted);
+      margin-bottom: 32px;
+    }
+    .overlay .rules strong { color: var(--text); }
+
+    .btn-big {
+      padding: 14px 40px;
+      font-size: 16px;
+      font-weight: 500;
+      border-radius: var(--rad-lg);
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      width: auto;
+      text-align: center;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn-big:active { transform: scale(0.97); }
+    .btn-start { background: #3d8c40; color: #fff; }
+    .btn-again { background: #1a78c2; color: #fff; }
+
+    .duration-display {
+      font-size: 48px;
+      font-weight: 300;
+      letter-spacing: -1px;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+    .duration-label { font-size: 13px; color: var(--muted); margin-bottom: 32px; }
+
+    /* End Session button */
+    .end-btn-wrap { margin-top: 8px; }
+    .btn-end-session {
+      width: 100%;
+      background: transparent;
+      border: 0.5px solid var(--border);
+      border-radius: var(--rad-md);
+      color: var(--danger);
+      padding: 10px 12px;
+      font-size: 12px;
+      text-align: center;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.12s;
+    }
+    .btn-end-session:hover { background: var(--surface2); }
   </style>
 </head>
 <body>
-<div class="app">
+
+<!-- ── Start Screen ──────────────────────────────────────────────────────── -->
+<div class="overlay" id="screen-start">
+  <h2>Resource Balance</h2>
+  <p class="big-sub">You're in charge of keeping a city's electricity and water running. Can you keep both in the green?</p>
+  <div class="rules">
+    <strong>How it works:</strong><br>
+    Turn the dials (or move the sliders) to control how much electricity and water you use.<br><br>
+    <strong style="color:#3d8c40;">Green zone (10–35%)</strong> — the resource recharges and you earn cards.<br>
+    <strong style="color:#ba7517;">Below 10%</strong> — the resource slowly leaks. Stay here too long and it locks up!<br>
+    <strong style="color:#e24b4a;">Above 35%</strong> — the resource drains fast. Hit 0% and the lights go out!<br><br>
+    Buy upgrades with your cards to make the city more efficient.
+  </div>
+  <button class="btn-big btn-start" onclick="startGame()">Start Game</button>
+</div>
+
+<!-- ── End Screen ────────────────────────────────────────────────────────── -->
+<div class="overlay hidden" id="screen-end">
+  <h2>Thanks for playing!</h2>
+  <div class="duration-display" id="end-duration">0:00</div>
+  <div class="duration-label">minutes played</div>
+  <p class="big-sub" style="margin-bottom: 24px;">Great job keeping the city running. See if you can do even better next time!</p>
+  <button class="btn-big btn-again" onclick="playAgain()">Play Again</button>
+</div>
+
+<div class="app" id="app-main">
 
   <h1>Resource Balance</h1>
   <p class="subtitle">Keep both meters happy. Too high drains fast. Too low causes problems.</p>
@@ -305,6 +409,10 @@
   <div class="log-label">Event log</div>
   <div id="event-log"></div>
 
+  <div class="end-btn-wrap">
+    <button class="btn-end-session" onclick="endGame()">End Session</button>
+  </div>
+
 </div>
 
 <script>
@@ -354,6 +462,12 @@ function wsConnect() {
   ws.onmessage = (e) => {
     let data;
     try { data = JSON.parse(e.data); } catch { return; }
+
+    // Session control message from bridge (not a Pico state packet)
+    if (data.type === 'session_ended') {
+      showEndScreen(data.duration_s);
+      return;
+    }
 
     // Merge into local S (Pico is the source of truth for all state)
     Object.assign(S, data);
@@ -408,6 +522,7 @@ function handleEvent(ev) {
     chronic_w:    ['Uh-oh: water stayed super low too long.',         'bad'],
     solar_bought: [`Solar panel bought! Now ${S.sp}/8 (${solarMult(S.sp).toFixed(1)}× regen)`, 'ok'],
     tower_bought: [`Water tower bought! Now ${S.wt}/4 (${towerMult(S.wt).toFixed(1)}× regen)`, 'ok'],
+    game_reset:   ["Game reset — good luck!", 'ok'],
   };
   const m = map[ev];
   if (m) log(m[0], m[1]);
@@ -552,6 +667,32 @@ wSlider.addEventListener('input', e => {
   S.ws = v;
   send({ cmd: 'setSpend', res: 'w', val: v });
 });
+
+/* ─── Screen flow ───────────────────────────────────────────────────────── */
+function startGame() {
+  document.getElementById('screen-start').classList.add('hidden');
+  document.getElementById('event-log').innerHTML = '';  // clear log for fresh session
+  send({ cmd: 'startGame' });
+}
+
+function endGame() {
+  send({ cmd: 'endGame' });
+  // showEndScreen() is called when the bridge confirms via session_ended message
+}
+
+function showEndScreen(duration_s) {
+  const mm = Math.floor(duration_s / 60);
+  const ss = duration_s % 60;
+  document.getElementById('end-duration').textContent =
+    mm > 0 ? `${mm}:${String(ss).padStart(2, '0')}` : `0:${String(ss).padStart(2, '0')}`;
+  document.getElementById('screen-end').classList.remove('hidden');
+}
+
+function playAgain() {
+  document.getElementById('screen-end').classList.add('hidden');
+  document.getElementById('screen-start').classList.remove('hidden');
+  send({ cmd: 'resetGame' });  // reset Pico state (bridge passes this through)
+}
 
 /* ─── Boot ──────────────────────────────────────────────────────────────── */
 wsConnect();
