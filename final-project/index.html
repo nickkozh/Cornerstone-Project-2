@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Resource Balance — Pico 2</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #f5f4ef;
+      --surface:  #ffffff;
+      --surface2: #eeede8;
+      --border:   rgba(0,0,0,0.10);
+      --text:     #1a1a18;
+      --muted:    #6b6a65;
+      --hint:     #9b9a96;
+      --rad-md:   8px;
+      --rad-lg:   12px;
+      --elec:     #c8910a;
+      --water:    #1a78c2;
+      --ok:       #3d8c40;
+      --warn:     #ba7517;
+      --danger:   #e24b4a;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:      #1a1a18;
+        --surface: #252523;
+        --surface2:#2e2e2b;
+        --border:  rgba(255,255,255,0.10);
+        --text:    #f0efe9;
+        --muted:   #9b9a96;
+        --hint:    #6b6a65;
+      }
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 15px;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 2rem 1rem;
+    }
+
+    .app { width: 100%; max-width: 560px; }
+
+    h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
+    .subtitle { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+
+    .conn-bar {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: var(--rad-md);
+      background: var(--surface2);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .conn-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--hint);
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .conn-dot.ok   { background: #3d8c40; }
+    .conn-dot.bad  { background: #e24b4a; }
+
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+
+    .card {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--rad-lg);
+      padding: 1rem;
+    }
+
+    .led-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .led { width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%; transition: background 0.08s; }
+    .led-info { flex: 1; }
+    .led-info .name { font-size: 13px; font-weight: 500; }
+    .led-info .rate { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .pct { font-size: 20px; font-weight: 500; }
+
+    .bar-bg { height: 7px; background: var(--surface2); border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
+    .bar-fill { height: 100%; border-radius: 4px; transition: width 0.08s; }
+
+    .dial-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .dial-label { font-size: 11px; color: var(--muted); }
+
+    input[type=range] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--surface2);
+      outline: none;
+      cursor: pointer;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: var(--text);
+      cursor: pointer;
+      border: 2px solid var(--surface);
+      box-shadow: 0 0 0 1px var(--border);
+    }
+    input[type=range]:disabled::-webkit-slider-thumb { background: var(--hint); cursor: not-allowed; }
+    input[type=range]:disabled { opacity: 0.4; }
+
+    .status-msg { font-size: 11px; min-height: 14px; margin-top: 6px; }
+
+    .warn-bars { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+    .warn-row { display: flex; align-items: center; gap: 6px; }
+    .warn-lbl { font-size: 10px; color: var(--hint); width: 60px; flex-shrink: 0; text-align: right; }
+    .warn-bar-bg { flex: 1; height: 4px; background: var(--surface2); border-radius: 2px; overflow: hidden; }
+    .warn-bar-fill { height: 100%; border-radius: 2px; transition: width 0.08s; }
+
+    .metric-card { background: var(--surface2); border-radius: var(--rad-md); padding: 8px 10px; text-align: center; }
+    .metric-label { font-size: 10px; color: var(--muted); margin-bottom: 2px; }
+    .metric-val { font-size: 20px; font-weight: 500; }
+    .metric-sub { font-size: 10px; color: var(--hint); margin-top: 2px; }
+    .mini-bar-bg { height: 4px; background: var(--surface); border-radius: 2px; overflow: hidden; margin-top: 5px; }
+    .mini-bar-fill { height: 100%; border-radius: 2px; transition: width 0.08s; }
+
+    button {
+      width: 100%;
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--rad-md);
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 12px;
+      text-align: left;
+      cursor: pointer;
+      line-height: 1.5;
+      font-family: inherit;
+      transition: background 0.12s, opacity 0.12s;
+    }
+    button:hover:not(:disabled) { background: var(--surface2); }
+    button:active:not(:disabled) { transform: scale(0.99); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-cost { font-size: 11px; color: var(--muted); }
+
+    .log-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    #event-log {
+      background: var(--surface2);
+      border-radius: var(--rad-md);
+      padding: 8px 10px;
+      height: 120px;
+      overflow-y: auto;
+      font-size: 12px;
+      font-family: "SF Mono", "Menlo", "Courier New", monospace;
+      color: var(--muted);
+    }
+    #event-log .ok   { color: #3d8c40; }
+    #event-log .bad  { color: #e24b4a; }
+    #event-log .warn { color: #ba7517; }
+
+    .section { margin-bottom: 12px; }
+
+    .zone-hint {
+      font-size: 11px;
+      color: var(--hint);
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    .zone-hint .sweet { color: #3d8c40; font-weight: 500; }
+    .zone-hint .danger-lo { color: #ba7517; }
+    .zone-hint .danger-hi { color: #e24b4a; }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <h1>Resource Balance</h1>
+  <p class="subtitle">Keep both meters happy. Too high drains fast. Too low causes problems.</p>
+
+  <!-- Connection status -->
+  <div class="conn-bar">
+    <div class="conn-dot" id="conn-dot"></div>
+    <span id="conn-text">Connecting to Pico…</span>
+  </div>
+
+  <p class="zone-hint">
+    <span class="danger-lo">below 10% → too low</span>
+    &nbsp;·&nbsp;
+    <span class="sweet">10–35% → best zone (earn cards)</span>
+    &nbsp;·&nbsp;
+    <span class="danger-hi">above 35% → too high (drains)</span>
+  </p>
+
+  <div class="section grid2">
+
+    <!-- Electricity -->
+    <div class="card">
+      <div class="led-row">
+        <div class="led" id="elec-led"></div>
+        <div class="led-info">
+          <div class="name">Electricity</div>
+          <div class="rate" id="elec-rate">–</div>
+        </div>
+        <div class="pct" id="elec-pct">–</div>
+      </div>
+      <div class="bar-bg">
+        <div class="bar-fill" id="elec-bar" style="width:0%; background:#c8910a;"></div>
+      </div>
+      <div class="dial-row">
+        <span class="dial-label">Slider / dial (use)</span>
+        <span class="dial-label" id="elec-spend-val">0%</span>
+      </div>
+      <input type="range" min="0" max="100" value="0" step="1" id="elec-slider" />
+      <div class="warn-bars">
+        <div class="warn-row">
+          <span class="warn-lbl">too high</span>
+          <div class="warn-bar-bg"><div class="warn-bar-fill" id="elec-over-bar" style="width:0%; background:#e24b4a;"></div></div>
+        </div>
+        <div class="warn-row">
+          <span class="warn-lbl">too low</span>
+          <div class="warn-bar-bg"><div class="warn-bar-fill" id="elec-stag-bar" style="width:0%; background:#ba7517;"></div></div>
+        </div>
+      </div>
+      <div class="status-msg" id="elec-status"></div>
+    </div>
+
+    <!-- Water -->
+    <div class="card">
+      <div class="led-row">
+        <div class="led" id="water-led"></div>
+        <div class="led-info">
+          <div class="name">Water</div>
+          <div class="rate" id="water-rate">–</div>
+        </div>
+        <div class="pct" id="water-pct">–</div>
+      </div>
+      <div class="bar-bg">
+        <div class="bar-fill" id="water-bar" style="width:0%; background:#1a78c2;"></div>
+      </div>
+      <div class="dial-row">
+        <span class="dial-label">Slider / dial (use)</span>
+        <span class="dial-label" id="water-spend-val">0%</span>
+      </div>
+      <input type="range" min="0" max="100" value="0" step="1" id="water-slider" />
+      <div class="warn-bars">
+        <div class="warn-row">
+          <span class="warn-lbl">too high</span>
+          <div class="warn-bar-bg"><div class="warn-bar-fill" id="water-over-bar" style="width:0%; background:#e24b4a;"></div></div>
+        </div>
+        <div class="warn-row">
+          <span class="warn-lbl">too low</span>
+          <div class="warn-bar-bg"><div class="warn-bar-fill" id="water-stag-bar" style="width:0%; background:#ba7517;"></div></div>
+        </div>
+      </div>
+      <div class="status-msg" id="water-status"></div>
+    </div>
+
+  </div>
+
+  <!-- Stats -->
+  <div class="section grid4">
+    <div class="metric-card">
+      <div class="metric-label">Solar panels</div>
+      <div class="metric-val" id="stat-solar" style="color:#c8910a;">2/8</div>
+      <div class="metric-sub" id="solar-mult">1.0× regen</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Water towers</div>
+      <div class="metric-val" id="stat-towers" style="color:#1a78c2;">1/4</div>
+      <div class="metric-sub" id="tower-mult">1.0× regen</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Electricity cards</div>
+      <div class="metric-val" id="stat-ec" style="color:#c8910a;">0</div>
+      <div class="mini-bar-bg"><div class="mini-bar-fill" id="ec-prog" style="width:0%; background:#c8910a;"></div></div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Water cards</div>
+      <div class="metric-val" id="stat-wc" style="color:#1a78c2;">0</div>
+      <div class="mini-bar-bg"><div class="mini-bar-fill" id="wc-prog" style="width:0%; background:#1a78c2;"></div></div>
+    </div>
+  </div>
+
+  <!-- Upgrades -->
+  <div class="section grid2">
+    <button id="btn-solar" onclick="buySolar()" disabled>
+      Buy a solar panel<br>
+      <span class="btn-cost">Cost: 3 electricity cards + 1 water card &nbsp;(max 8)</span>
+    </button>
+    <button id="btn-tower" onclick="buyTower()" disabled>
+      Buy a water tower<br>
+      <span class="btn-cost">Cost: 3 water cards + 1 electricity card &nbsp;(max 4)</span>
+    </button>
+  </div>
+
+  <div class="log-label">Event log</div>
+  <div id="event-log"></div>
+
+</div>
+
+<script>
+/* ─── Display constants (match main.py exactly) ─────────────────────────── */
+const NT         = 35;
+const LT         = 10;
+const DRAIN      = 4;
+const REGEN      = 2;
+const STAG_DRAIN = 1.5;
+const BLKOUT_DUR = 15;
+const LOW_TH     = 10;
+const STAG_T     = 15;
+const CARD_INT   = 8;
+const CARD_MIN   = 50;
+
+const solarMult = p => 1 + (p - 2) * 0.2;
+const towerMult = t => 1 + (t - 1) * 0.3;
+
+/* ─── Local display state (populated by WebSocket messages) ─────────────── */
+let S = {
+  elec: 0, water: 0,
+  es: 0, ws: 0,
+  sp: 2, wt: 1,
+  ec: 0, wc: 0,
+  eb: 0, wd: 0,
+  stagE: 0, stagW: 0,
+  elt: 0, wlt: 0,
+  est: 0, wst: 0,
+  ect: 0, wct: 0,
+  t: 0,
+};
+
+/* ─── WebSocket ─────────────────────────────────────────────────────────── */
+const WS_URL = 'ws://localhost:8765';
+let ws = null;
+let reconnectTimer = null;
+
+function wsConnect() {
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    setConn(true);
+    log("Connected to Pico. Let's play! Best zone is 10–35%.");
+    clearTimeout(reconnectTimer);
+  };
+
+  ws.onmessage = (e) => {
+    let data;
+    try { data = JSON.parse(e.data); } catch { return; }
+
+    // Merge into local S (Pico is the source of truth for all state)
+    Object.assign(S, data);
+
+    // Handle events emitted this tick
+    (data.ev || []).forEach(handleEvent);
+
+    // Sync slider visuals to Pico's actual spend (only when not being dragged)
+    if (!eDragging) document.getElementById('elec-slider').value = Math.round(S.es);
+    if (!wDragging) document.getElementById('water-slider').value = Math.round(S.ws);
+
+    render();
+  };
+
+  ws.onclose = () => {
+    setConn(false);
+    reconnectTimer = setTimeout(wsConnect, 2000);
+  };
+
+  ws.onerror = () => {
+    ws.close();
+  };
+}
+
+function send(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(obj));
+  }
+}
+
+function setConn(ok) {
+  document.getElementById('conn-dot').className  = 'conn-dot ' + (ok ? 'ok' : 'bad');
+  document.getElementById('conn-text').textContent = ok
+    ? 'Connected to Pico'
+    : 'Disconnected — reconnecting…';
+}
+
+/* ─── Event handler (translates Pico event codes → log messages) ─────────── */
+function handleEvent(ev) {
+  const map = {
+    blackout:     ['BLACKOUT! Electricity is out for 15s.',          'bad'],
+    drought:      ['DROUGHT! Water is out for 15s.',                 'bad'],
+    stag_e:       ['Too low too long — electricity got stuck for 15s.','warn'],
+    stag_w:       ['Too low too long — water got stuck for 15s.',    'warn'],
+    end_blackout: ['Blackout over — electricity is back!',           'ok'],
+    end_drought:  ['Drought over — water is back!',                  'ok'],
+    end_stag_e:   ['Unstuck! Electricity is running again.',         'ok'],
+    end_stag_w:   ['Unstuck! Water is flowing again.',               'ok'],
+    card_e:       [`Got an electricity card! (${S.ec}/10)`,          'ok'],
+    card_w:       [`Got a water card! (${S.wc}/10)`,                 'ok'],
+    chronic_e:    ['Uh-oh: electricity stayed super low too long.',   'bad'],
+    chronic_w:    ['Uh-oh: water stayed super low too long.',         'bad'],
+    solar_bought: [`Solar panel bought! Now ${S.sp}/8 (${solarMult(S.sp).toFixed(1)}× regen)`, 'ok'],
+    tower_bought: [`Water tower bought! Now ${S.wt}/4 (${towerMult(S.wt).toFixed(1)}× regen)`, 'ok'],
+  };
+  const m = map[ev];
+  if (m) log(m[0], m[1]);
+}
+
+/* ─── Upgrades (send command; Pico handles deduction + confirmation) ────── */
+function buySolar() {
+  if (S.ec >= 3 && S.wc >= 1 && S.sp < 8) {
+    send({ cmd: 'upgrade', type: 'solar' });
+  }
+}
+function buyTower() {
+  if (S.wc >= 3 && S.ec >= 1 && S.wt < 4) {
+    send({ cmd: 'upgrade', type: 'tower' });
+  }
+}
+
+/* ─── LED colour (unchanged from simulation) ────────────────────────────── */
+function ledColor(spend, res, isElec, locked) {
+  if (locked || res <= 0) return isElec ? '#2a2510' : '#0d1a24';
+  const b = spend / 100;
+  return isElec
+    ? `rgb(${Math.round(40+b*215)},${Math.round(35+b*155)},${Math.round(b*15)})`
+    : `rgb(${Math.round(5+b*15)},${Math.round(40+b*95)},${Math.round(80+b*175)})`;
+}
+
+/* ─── Render (unchanged from simulation — reads from S) ─────────────────── */
+function render() {
+  const eL = S.eb > 0 || S.stagE > 0;
+  const wL = S.wd > 0 || S.stagW > 0;
+  const ep = Math.round(S.elec), wp = Math.round(S.water);
+
+  document.getElementById('elec-led').style.background  = ledColor(S.es, S.elec,  true,  eL);
+  document.getElementById('water-led').style.background = ledColor(S.ws, S.water, false, wL);
+
+  document.getElementById('elec-pct').textContent  = ep + '%';
+  document.getElementById('water-pct').textContent = wp + '%';
+  document.getElementById('elec-bar').style.width  = ep + '%';
+  document.getElementById('water-bar').style.width = wp + '%';
+  document.getElementById('elec-bar').style.background  = S.elec  < 20 ? '#e24b4a' : S.elec  < 40 ? '#d48a0a' : '#c8910a';
+  document.getElementById('water-bar').style.background = S.water < 20 ? '#e24b4a' : S.water < 40 ? '#4a90c4' : '#1a78c2';
+
+  document.getElementById('elec-spend-val').textContent  = Math.round(S.es) + '%';
+  document.getElementById('water-spend-val').textContent = Math.round(S.ws) + '%';
+
+  function rateStr(sp, mul, locked, bkT, sgT) {
+    if (locked) return (bkT > 0 ? `locked (${Math.ceil(bkT)}s)` : `unsticking (${Math.ceil(sgT)}s)`);
+    if (sp > NT) return `draining ${(((sp-NT)/(100-NT))*DRAIN).toFixed(1)}%/s`;
+    if (sp >= LT) return `charging ${(((NT-sp)/(NT-LT))*REGEN*mul).toFixed(1)}%/s`;
+    return `leaking ${(((LT-sp)/LT)*STAG_DRAIN).toFixed(1)}%/s`;
+  }
+  function rateColor(sp, locked) {
+    if (locked) return '#ba7517';
+    if (sp > NT) return '#e24b4a';
+    if (sp >= LT) return '#3d8c40';
+    return '#ba7517';
+  }
+  const erEl = document.getElementById('elec-rate');
+  const wrEl = document.getElementById('water-rate');
+  erEl.textContent = rateStr(S.es, solarMult(S.sp), eL, S.eb, S.stagE);
+  wrEl.textContent = rateStr(S.ws, towerMult(S.wt), wL, S.wd, S.stagW);
+  erEl.style.color = rateColor(S.es, eL);
+  wrEl.style.color = rateColor(S.ws, wL);
+
+  document.getElementById('elec-over-bar').style.width  = (S.es > NT ? Math.round((S.es-NT)/(100-NT)*100) : 0) + '%';
+  document.getElementById('water-over-bar').style.width = (S.ws > NT ? Math.round((S.ws-NT)/(100-NT)*100) : 0) + '%';
+  document.getElementById('elec-stag-bar').style.width  = Math.round(S.est/STAG_T*100) + '%';
+  document.getElementById('water-stag-bar').style.width = Math.round(S.wst/STAG_T*100) + '%';
+
+  function statusMsg(sp, res, locked, bkT, sgT, stagBuild, cardT, cards) {
+    if (bkT > 0) return `Blackout! ${Math.ceil(bkT)}s left`;
+    if (sgT > 0) return `Stuck! ${Math.ceil(sgT)}s left`;
+    if (sp < LT) return `Too low — "stuck" meter: ${Math.round(stagBuild/STAG_T*100)}%`;
+    if (sp > NT) return res < LOW_TH ? `Danger! Turn it down now.` : `Too high — turn down to recharge`;
+    if (res > CARD_MIN && cards < 10) return `Next card in ${Math.ceil(CARD_INT - cardT)}s`;
+    if (cards >= 10) return `Cards are full`;
+    return `Need 50%+ to earn cards`;
+  }
+  function statusColor(sp, res, locked) {
+    if (locked || res < LOW_TH) return '#e24b4a';
+    if (sp < LT || sp > NT) return '#ba7517';
+    return '#3d8c40';
+  }
+  const esEl = document.getElementById('elec-status');
+  const wsEl = document.getElementById('water-status');
+  esEl.textContent = statusMsg(S.es, S.elec,  eL, S.eb, S.stagE, S.est, S.ect, S.ec);
+  wsEl.textContent = statusMsg(S.ws, S.water, wL, S.wd, S.stagW, S.wst, S.wct, S.wc);
+  esEl.style.color = statusColor(S.es, S.elec,  eL);
+  wsEl.style.color = statusColor(S.ws, S.water, wL);
+
+  document.getElementById('elec-slider').disabled  = eL;
+  document.getElementById('water-slider').disabled = wL;
+
+  document.getElementById('stat-ec').textContent = S.ec;
+  document.getElementById('stat-wc').textContent = S.wc;
+  document.getElementById('ec-prog').style.width = Math.round(S.ect/CARD_INT*100) + '%';
+  document.getElementById('wc-prog').style.width = Math.round(S.wct/CARD_INT*100) + '%';
+  document.getElementById('stat-solar').textContent  = `${S.sp}/8`;
+  document.getElementById('stat-towers').textContent = `${S.wt}/4`;
+  document.getElementById('solar-mult').textContent  = `${solarMult(S.sp).toFixed(1)}× regen`;
+  document.getElementById('tower-mult').textContent  = `${towerMult(S.wt).toFixed(1)}× regen`;
+  document.getElementById('btn-solar').disabled = !(S.ec >= 3 && S.wc >= 1 && S.sp < 8);
+  document.getElementById('btn-tower').disabled = !(S.wc >= 3 && S.ec >= 1 && S.wt < 4);
+}
+
+/* ─── Log ───────────────────────────────────────────────────────────────── */
+function log(msg, type = '') {
+  const el = document.getElementById('event-log');
+  const d  = document.createElement('div');
+  d.className  = type;
+  d.textContent = `[${Math.round(S.t)}s]  ${msg}`;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+
+/* ─── Slider input (send spend command; Pico is authoritative) ───────────── */
+let eDragging = false, wDragging = false;
+
+const eSlider = document.getElementById('elec-slider');
+const wSlider = document.getElementById('water-slider');
+
+eSlider.addEventListener('mousedown',  () => { eDragging = true; });
+eSlider.addEventListener('touchstart', () => { eDragging = true; }, { passive: true });
+eSlider.addEventListener('mouseup',    () => { eDragging = false; });
+eSlider.addEventListener('touchend',   () => { eDragging = false; });
+
+wSlider.addEventListener('mousedown',  () => { wDragging = true; });
+wSlider.addEventListener('touchstart', () => { wDragging = true; }, { passive: true });
+wSlider.addEventListener('mouseup',    () => { wDragging = false; });
+wSlider.addEventListener('touchend',   () => { wDragging = false; });
+
+eSlider.addEventListener('input', e => {
+  if (S.eb > 0 || S.stagE > 0) { e.target.value = 0; return; }
+  const v = +e.target.value;
+  S.es = v;   // optimistic local update for smooth feel
+  send({ cmd: 'setSpend', res: 'e', val: v });
+});
+
+wSlider.addEventListener('input', e => {
+  if (S.wd > 0 || S.stagW > 0) { e.target.value = 0; return; }
+  const v = +e.target.value;
+  S.ws = v;
+  send({ cmd: 'setSpend', res: 'w', val: v });
+});
+
+/* ─── Boot ──────────────────────────────────────────────────────────────── */
+wsConnect();
+</script>
+</body>
+</html>
