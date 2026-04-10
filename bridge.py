@@ -93,6 +93,7 @@ def _http_thread():
 
 # ── Serial reader thread ──────────────────────────────────────────────────────
 def _serial_thread(ser):
+    """Reads from serial until disconnect, then returns (does not exit process)."""
     global _latest
     _consecutive_errors = 0
     while True:
@@ -101,8 +102,8 @@ def _serial_thread(ser):
             if not raw:
                 _consecutive_errors += 1
                 if _consecutive_errors >= 5:
-                    print('[serial] Pico disconnected — exiting so bridge can restart.', file=sys.stderr)
-                    os._exit(1)
+                    print('[serial] Pico disconnected.', file=sys.stderr)
+                    return
                 continue
             _consecutive_errors = 0
             line = raw.decode('utf-8', errors='ignore').strip()
@@ -119,9 +120,35 @@ def _serial_thread(ser):
             _consecutive_errors += 1
             print(f'[serial] {e}', file=sys.stderr)
             if _consecutive_errors >= 5:
-                print('[serial] Pico disconnected — exiting so bridge can restart.', file=sys.stderr)
-                os._exit(1)
+                print('[serial] Pico disconnected.', file=sys.stderr)
+                return
             time.sleep(0.2)
+
+
+def _serial_manager(hint):
+    """Reconnect loop — runs in its own thread, restarts serial on disconnect."""
+    while True:
+        ports = [p for p in serial.tools.list_ports.comports() if p.vid == 0x2E8A]
+        port = hint or (ports[0].device if ports else None)
+        if not port:
+            time.sleep(0.5)
+            continue
+        try:
+            ser = serial.Serial(port, BAUD, timeout=1)
+        except serial.SerialException as e:
+            print(f'[serial] Could not open {port}: {e}', file=sys.stderr)
+            time.sleep(0.5)
+            continue
+        _ser_ref[0] = ser
+        print(f'[serial] Connected on {port}')
+        _serial_thread(ser)
+        try:
+            ser.close()
+        except Exception:
+            pass
+        _ser_ref[0] = None
+        print('[bridge] Waiting for Pico to reconnect...')
+        time.sleep(0.5)
 
 
 # ── WebSocket server ──────────────────────────────────────────────────────────
@@ -220,8 +247,7 @@ async def _main_async():
     except ImportError:
         sys.exit('websockets not installed. Run: pip install websockets')
 
-    async with websockets.serve(_ws_handler, WS_HOST, WS_PORT):
-        print(f'WebSocket :  ws://{WS_HOST}:{WS_PORT}')
+    async with websockets.serve(_ws_handler, WS_HOST, WS_PORT, reuse_address=True):
         await _broadcast_loop()   # runs forever
 
 
@@ -252,26 +278,20 @@ def find_port(hint=None):
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == '__main__':
     hint = sys.argv[1] if len(sys.argv) > 1 else None
-    port = find_port(hint)
 
-    try:
-        _ser_ref[0] = serial.Serial(port, BAUD, timeout=1)
-    except serial.SerialException as e:
-        sys.exit(f'Could not open {port}: {e}')
-
-    print(f'Serial:      {port} @ {BAUD} baud')
-
-    # HTTP server (background thread)
-    threading.Thread(target=_http_thread, daemon=True).start()
     print(f'Interface:   http://localhost:{HTTP_PORT}')
-
-    # Serial reader (background thread)
-    threading.Thread(target=_serial_thread, args=(_ser_ref[0],), daemon=True).start()
-
+    print(f'WebSocket :  ws://{WS_HOST}:{WS_PORT}')
     print('Press Ctrl-C to quit.\n')
 
+    # HTTP server — stays up forever
+    threading.Thread(target=_http_thread, daemon=True).start()
+
+    # Serial manager — reconnects automatically after reflash/disconnect
+    threading.Thread(target=_serial_manager, args=(hint,), daemon=True).start()
+
     try:
-        asyncio.run(_main_async())
+        asyncio.run(_main_async())   # WebSocket server — stays up forever
     except KeyboardInterrupt:
         print('\nShutting down.')
-        _ser_ref[0].close()
+        if _ser_ref[0]:
+            _ser_ref[0].close()

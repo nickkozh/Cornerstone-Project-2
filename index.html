@@ -542,8 +542,10 @@ function buyTower() {
 }
 
 let usingPots = false;
+let potsPending = false;
 function toggleInputMode() {
   usingPots = !usingPots;
+  potsPending = true;
   send({ cmd: 'setInputMode', pots: usingPots });
   document.getElementById('btn-input-mode').textContent = usingPots ? 'Physical dials' : 'Digital sliders';
 }
@@ -635,8 +637,11 @@ function render() {
   document.getElementById('btn-solar').disabled = !(S.ec >= 3 && S.wc >= 1 && S.sp < 6);
   document.getElementById('btn-tower').disabled = !(S.wc >= 3 && S.ec >= 1 && S.wt < 3);
   if (S.pots !== undefined) {
-    usingPots = S.pots;
-    document.getElementById('btn-input-mode').textContent = S.pots ? 'Physical dials' : 'Digital sliders';
+    if (potsPending && S.pots === usingPots) potsPending = false;
+    if (!potsPending) {
+      usingPots = S.pots;
+      document.getElementById('btn-input-mode').textContent = S.pots ? 'Physical dials' : 'Digital sliders';
+    }
   }
 }
 
@@ -668,7 +673,7 @@ wSlider.addEventListener('touchend',   () => { wDragging = false; });
 
 eSlider.addEventListener('input', e => {
   if (S.eb > 0 || S.stagE > 0) { e.target.value = 0; return; }
-  if (usingPots) { usingPots = false; send({ cmd: 'setInputMode', pots: false }); }
+  if (usingPots) { usingPots = false; potsPending = true; send({ cmd: 'setInputMode', pots: false }); document.getElementById('btn-input-mode').textContent = 'Digital sliders'; }
   const v = +e.target.value;
   S.es = v;   // optimistic local update for smooth feel
   send({ cmd: 'setSpend', res: 'e', val: v });
@@ -676,7 +681,7 @@ eSlider.addEventListener('input', e => {
 
 wSlider.addEventListener('input', e => {
   if (S.wd > 0 || S.stagW > 0) { e.target.value = 0; return; }
-  if (usingPots) { usingPots = false; send({ cmd: 'setInputMode', pots: false }); }
+  if (usingPots) { usingPots = false; potsPending = true; send({ cmd: 'setInputMode', pots: false }); document.getElementById('btn-input-mode').textContent = 'Digital sliders'; }
   const v = +e.target.value;
   S.ws = v;
   send({ cmd: 'setSpend', res: 'w', val: v });

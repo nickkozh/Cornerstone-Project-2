@@ -74,7 +74,12 @@ def set_bar(leds, level, locked, flash_on):
 
 # ── ADC reading ───────────────────────────────────────────────────────────────
 def read_pot(adc):
-    pct = adc.read_u16() / 65535.0 * 100.0
+    adc.read_u16()          # discard: flush ADC sample-hold capacitor
+    adc.read_u16()          # second flush for high-impedance sources
+    total = 0
+    for _ in range(4):
+        total += adc.read_u16()
+    pct = (total / 4) / 65535.0 * 100.0
     return 0.0 if pct < 1.5 else pct   # 1.5% deadband kills idle noise
 
 # ── Game state ────────────────────────────────────────────────────────────────
@@ -283,8 +288,9 @@ while True:
         continue
 
     # Always read raw ADC values (used for auto-switching detection)
-    raw_e = read_pot(POT_ELEC)
+    # Read each channel twice: first read flushes crosstalk from the other channel
     raw_w = read_pot(POT_WATER)
+    raw_e = read_pot(POT_ELEC)
 
     if S['pots']:
         # Physical mode: pot movement > 3% cancels any web override

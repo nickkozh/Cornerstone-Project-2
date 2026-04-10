@@ -4,6 +4,17 @@ A resource-management game running on a Raspberry Pi Pico 2. Two physical dials 
 
 ---
 
+## Quick start
+
+```bash
+cd "Desktop/Spring '26 HW/Cornerstone/Project 2"
+pkill -f bridge.py; sleep 1; source venv/bin/activate && python3 bridge.py
+```
+
+Then open **http://localhost:8080** in your browser.
+
+---
+
 ## Files
 
 | File | Where it runs | What it does |
