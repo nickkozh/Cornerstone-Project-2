@@ -28,15 +28,15 @@ DUTY_MAX = 9830       # 15% × 65535 — caps average current without a resistor
 # ── Game constants (match the web simulation exactly) ────────────────────────
 NT       = 35.0       # Upper threshold: above this → drain
 LT       = 10.0       # Lower threshold: below this → stagnation
-DRAIN    = 4.0        # Max drain rate (%/s at 100% spend)
-REGEN    = 2.0        # Max regen rate (%/s in sweet spot, with multiplier)
-STAG_DR  = 1.5        # Slow bleed rate while stagnating (%/s max)
+DRAIN    = 1.5        # Max drain rate (%/s at 100% spend)
+REGEN    = 0.8        # Max regen rate (%/s in sweet spot, with multiplier)
+STAG_DR  = 0.5        # Slow bleed rate while stagnating (%/s max)
 BLKOUT_D = 15.0       # Lockout duration for any event (s)
-BLKOUT_R = 0.3        # Passive regen during lockout (%/s)
+BLKOUT_R = 0.2        # Passive regen during lockout (%/s)
 LOW_TH   = 10.0       # Chronic-low threshold (%)
-CRISIS_T = 20.0       # Seconds at chronic-low before crisis fires
-STAG_T   = 15.0       # Stagnation build time before lockout (s)
-CARD_INT = 8.0        # Seconds between card grants
+CRISIS_T = 30.0       # Seconds at chronic-low before crisis fires
+STAG_T   = 20.0       # Stagnation build time before lockout (s)
+CARD_INT = 12.0       # Seconds between card grants
 CARD_MIN = 50.0       # Resource must be above this to earn cards
 LOOP_MS  = 50         # Main loop interval (20 Hz)
 
@@ -59,32 +59,38 @@ elec_leds  = make_pwm_leds(ELEC_LED_PINS)
 
 def set_bar(leds, level, locked, flash_on):
     """Render a resource level (0–100) as a PWM bar graph on 8 LEDs.
+    LEDs that are 'on' scale in brightness with the overall resource level.
     During lockout the bar flashes dim to signal the event."""
     n, seg = len(leds), 100.0 / len(leds)
+    # Brightness scales from 20% at low level to 100% at full level
+    brightness = 0.2 + 0.8 * (level / 100.0)
+    scaled_max = int(DUTY_MAX * brightness)
     for i, led in enumerate(leds):
         if locked:
             led.duty_u16(DUTY_MAX // 4 if flash_on else 0)
         elif level >= (i + 1) * seg:
-            led.duty_u16(DUTY_MAX)
+            led.duty_u16(scaled_max)
         elif level > i * seg:
             frac = (level - i * seg) / seg
-            led.duty_u16(int(DUTY_MAX * (frac ** 0.5)))
+            led.duty_u16(int(scaled_max * (frac ** 0.5)))
         else:
             led.duty_u16(0)
 
 # ── ADC reading ───────────────────────────────────────────────────────────────
 def read_pot(adc):
-    adc.read_u16()          # discard: flush ADC sample-hold capacitor
-    adc.read_u16()          # second flush for high-impedance sources
+    for _ in range(8):      # flush: let ADC settle on new channel
+        adc.read_u16()
+        time.sleep_us(50)
     total = 0
     for _ in range(4):
         total += adc.read_u16()
+        time.sleep_us(50)
     pct = (total / 4) / 65535.0 * 100.0
     return 0.0 if pct < 1.5 else pct   # 1.5% deadband kills idle noise
 
 # ── Game state ────────────────────────────────────────────────────────────────
 S = {
-    'e': 100.0, 'w': 100.0,            # resource levels
+    'e': 50.0, 'w': 50.0,              # resource levels
     'es': 0.0,  'ws': 0.0,             # effective spend (pot or web override)
     'sp': 2,    'wt': 1,               # solar panels, water towers
     'ec': 0,    'wc': 0,               # card counts
@@ -113,6 +119,7 @@ def update_res(rk, sk, bk, sgk, eltk, estk, ectk, ck, mul, dt):
         S[rk] = min(100.0, S[rk] + BLKOUT_R * dt)
         if S[bk] <= 0:
             S[bk] = 0.0
+            S[sk] = 20.0   # reset slider to 20% so player starts in sweet spot
             events.append('end_blackout' if rk == 'e' else 'end_drought')
         S[estk] = 0.0
         return events
@@ -123,6 +130,7 @@ def update_res(rk, sk, bk, sgk, eltk, estk, ectk, ck, mul, dt):
         S[rk] = min(100.0, S[rk] + BLKOUT_R * dt)
         if S[sgk] <= 0:
             S[sgk] = 0.0
+            S[sk] = 20.0   # reset slider to 20% so player starts in sweet spot
             events.append('end_stag_e' if rk == 'e' else 'end_stag_w')
         S[estk] = 0.0
         return events
@@ -234,7 +242,7 @@ def _handle_cmd(line):
             _pending_evts.append('tower_bought')
 
     elif c == 'resetGame':
-        S['e'] = 100.0; S['w'] = 100.0
+        S['e'] = 50.0; S['w'] = 50.0
         S['es'] = 0.0;  S['ws'] = 0.0
         S['sp'] = 2;    S['wt'] = 1
         S['ec'] = 0;    S['wc'] = 0
@@ -327,10 +335,16 @@ while True:
     # Advance game logic
     S['t'] += dt
     evts  = []
+    prev_es, prev_ws = S['es'], S['ws']
     evts += update_res('e', 'es', 'eb',  'stagE', 'elt', 'est', 'ect', 'ec',
                         solar_mult(S['sp']), dt)
     evts += update_res('w', 'ws', 'wd',  'stagW', 'wlt', 'wst', 'wct', 'wc',
                         tower_mult(S['wt']), dt)
+    # If event reset a spend value, sync the web slider override too
+    if S['es'] == 20.0 and prev_es != 20.0:
+        S['_web_e'] = 20.0
+    if S['ws'] == 20.0 and prev_ws != 20.0:
+        S['_web_w'] = 20.0
 
     # Add any events from commands (upgrades, etc.)
     evts += _pending_evts

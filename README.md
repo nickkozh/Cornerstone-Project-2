@@ -6,12 +6,15 @@ A resource-management game running on a Raspberry Pi Pico 2. Two physical dials 
 
 ## Quick start
 
-```bash
-cd "Desktop/Spring '26 HW/Cornerstone/Project 2"
-pkill -f bridge.py; sleep 1; source venv/bin/activate && python3 bridge.py
-```
-
-Then open **http://localhost:8080** in your browser.
+1. **Start the bridge** on your MacBook:
+   ```bash
+   cd "Desktop/Spring '26 HW/Cornerstone/Project 2"
+   pkill -f bridge.py; sleep 1; source venv/bin/activate && python3 bridge.py
+   ```
+2. **Plug in the Pico** via USB — the bridge will detect it automatically.
+3. **Make sure Tailscale is running** on both your MacBook and iPad.
+4. **Make sure NordVPN is off** on both devices.
+5. **On the iPad**, open Safari and go to `http://<macbook-tailscale-ip>:8080`.
 
 ---
 

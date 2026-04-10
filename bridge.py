@@ -28,7 +28,7 @@ import serial.tools.list_ports
 # ── Config ────────────────────────────────────────────────────────────────────
 HTTP_PORT  = 8080
 WS_PORT    = 8765
-WS_HOST    = 'localhost'
+WS_HOST    = ''
 BAUD       = 115200
 HTML_FILE  = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'index.html')
 CSV_FILE   = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sessions.csv')
