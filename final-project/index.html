@@ -267,7 +267,7 @@
   <p class="big-sub">You're in charge of keeping a city's electricity and water running. Can you keep both in the green?</p>
   <div class="rules">
     <strong>How it works:</strong><br>
-    Turn the dials (or move the sliders) to control how much electricity and water you use.<br><br>
+    Move the sliders (or turn the physical dials) to control how much electricity and water you use.<br><br>
     <strong style="color:#3d8c40;">Green zone (10–35%)</strong> — the resource recharges and you earn cards.<br>
     <strong style="color:#ba7517;">Below 10%</strong> — the resource slowly leaks. Stay here too long and it locks up!<br>
     <strong style="color:#e24b4a;">Above 35%</strong> — the resource drains fast. Hit 0% and the lights go out!<br><br>
@@ -294,6 +294,7 @@
   <div class="conn-bar">
     <div class="conn-dot" id="conn-dot"></div>
     <span id="conn-text">Connecting to Pico…</span>
+    <button id="btn-input-mode" onclick="toggleInputMode()" style="margin-left:auto;width:auto;padding:3px 10px;font-size:11px;border-radius:6px;">Digital sliders</button>
   </div>
 
   <p class="zone-hint">
@@ -374,12 +375,12 @@
   <div class="section grid4">
     <div class="metric-card">
       <div class="metric-label">Solar panels</div>
-      <div class="metric-val" id="stat-solar" style="color:#c8910a;">2/8</div>
+      <div class="metric-val" id="stat-solar" style="color:#c8910a;">2/6</div>
       <div class="metric-sub" id="solar-mult">1.0× regen</div>
     </div>
     <div class="metric-card">
       <div class="metric-label">Water towers</div>
-      <div class="metric-val" id="stat-towers" style="color:#1a78c2;">1/4</div>
+      <div class="metric-val" id="stat-towers" style="color:#1a78c2;">1/3</div>
       <div class="metric-sub" id="tower-mult">1.0× regen</div>
     </div>
     <div class="metric-card">
@@ -398,11 +399,11 @@
   <div class="section grid2">
     <button id="btn-solar" onclick="buySolar()" disabled>
       Buy a solar panel<br>
-      <span class="btn-cost">Cost: 3 electricity cards + 1 water card &nbsp;(max 8)</span>
+      <span class="btn-cost">Cost: 3 electricity cards + 1 water card &nbsp;(max 6)</span>
     </button>
     <button id="btn-tower" onclick="buyTower()" disabled>
       Buy a water tower<br>
-      <span class="btn-cost">Cost: 3 water cards + 1 electricity card &nbsp;(max 4)</span>
+      <span class="btn-cost">Cost: 3 water cards + 1 electricity card &nbsp;(max 3)</span>
     </button>
   </div>
 
@@ -520,8 +521,8 @@ function handleEvent(ev) {
     card_w:       [`Got a water card! (${S.wc}/10)`,                 'ok'],
     chronic_e:    ['Uh-oh: electricity stayed super low too long.',   'bad'],
     chronic_w:    ['Uh-oh: water stayed super low too long.',         'bad'],
-    solar_bought: [`Solar panel bought! Now ${S.sp}/8 (${solarMult(S.sp).toFixed(1)}× regen)`, 'ok'],
-    tower_bought: [`Water tower bought! Now ${S.wt}/4 (${towerMult(S.wt).toFixed(1)}× regen)`, 'ok'],
+    solar_bought: [`Solar panel bought! Now ${S.sp}/6 (${solarMult(S.sp).toFixed(1)}× regen)`, 'ok'],
+    tower_bought: [`Water tower bought! Now ${S.wt}/3 (${towerMult(S.wt).toFixed(1)}× regen)`, 'ok'],
     game_reset:   ["Game reset — good luck!", 'ok'],
   };
   const m = map[ev];
@@ -530,14 +531,21 @@ function handleEvent(ev) {
 
 /* ─── Upgrades (send command; Pico handles deduction + confirmation) ────── */
 function buySolar() {
-  if (S.ec >= 3 && S.wc >= 1 && S.sp < 8) {
+  if (S.ec >= 3 && S.wc >= 1 && S.sp < 6) {
     send({ cmd: 'upgrade', type: 'solar' });
   }
 }
 function buyTower() {
-  if (S.wc >= 3 && S.ec >= 1 && S.wt < 4) {
+  if (S.wc >= 3 && S.ec >= 1 && S.wt < 3) {
     send({ cmd: 'upgrade', type: 'tower' });
   }
+}
+
+let usingPots = false;
+function toggleInputMode() {
+  usingPots = !usingPots;
+  send({ cmd: 'setInputMode', pots: usingPots });
+  document.getElementById('btn-input-mode').textContent = usingPots ? 'Physical dials' : 'Digital sliders';
 }
 
 /* ─── LED colour (unchanged from simulation) ────────────────────────────── */
@@ -571,7 +579,7 @@ function render() {
   function rateStr(sp, mul, locked, bkT, sgT) {
     if (locked) return (bkT > 0 ? `locked (${Math.ceil(bkT)}s)` : `unsticking (${Math.ceil(sgT)}s)`);
     if (sp > NT) return `draining ${(((sp-NT)/(100-NT))*DRAIN).toFixed(1)}%/s`;
-    if (sp >= LT) return `charging ${(((NT-sp)/(NT-LT))*REGEN*mul).toFixed(1)}%/s`;
+    if (sp >= LT) return `charging ${(REGEN*mul).toFixed(1)}%/s`;
     return `leaking ${(((LT-sp)/LT)*STAG_DRAIN).toFixed(1)}%/s`;
   }
   function rateColor(sp, locked) {
@@ -620,12 +628,16 @@ function render() {
   document.getElementById('stat-wc').textContent = S.wc;
   document.getElementById('ec-prog').style.width = Math.round(S.ect/CARD_INT*100) + '%';
   document.getElementById('wc-prog').style.width = Math.round(S.wct/CARD_INT*100) + '%';
-  document.getElementById('stat-solar').textContent  = `${S.sp}/8`;
-  document.getElementById('stat-towers').textContent = `${S.wt}/4`;
+  document.getElementById('stat-solar').textContent  = `${S.sp}/6`;
+  document.getElementById('stat-towers').textContent = `${S.wt}/3`;
   document.getElementById('solar-mult').textContent  = `${solarMult(S.sp).toFixed(1)}× regen`;
   document.getElementById('tower-mult').textContent  = `${towerMult(S.wt).toFixed(1)}× regen`;
-  document.getElementById('btn-solar').disabled = !(S.ec >= 3 && S.wc >= 1 && S.sp < 8);
-  document.getElementById('btn-tower').disabled = !(S.wc >= 3 && S.ec >= 1 && S.wt < 4);
+  document.getElementById('btn-solar').disabled = !(S.ec >= 3 && S.wc >= 1 && S.sp < 6);
+  document.getElementById('btn-tower').disabled = !(S.wc >= 3 && S.ec >= 1 && S.wt < 3);
+  if (S.pots !== undefined) {
+    usingPots = S.pots;
+    document.getElementById('btn-input-mode').textContent = S.pots ? 'Physical dials' : 'Digital sliders';
+  }
 }
 
 /* ─── Log ───────────────────────────────────────────────────────────────── */
@@ -656,6 +668,7 @@ wSlider.addEventListener('touchend',   () => { wDragging = false; });
 
 eSlider.addEventListener('input', e => {
   if (S.eb > 0 || S.stagE > 0) { e.target.value = 0; return; }
+  if (usingPots) { usingPots = false; send({ cmd: 'setInputMode', pots: false }); }
   const v = +e.target.value;
   S.es = v;   // optimistic local update for smooth feel
   send({ cmd: 'setSpend', res: 'e', val: v });
@@ -663,6 +676,7 @@ eSlider.addEventListener('input', e => {
 
 wSlider.addEventListener('input', e => {
   if (S.wd > 0 || S.stagW > 0) { e.target.value = 0; return; }
+  if (usingPots) { usingPots = false; send({ cmd: 'setInputMode', pots: false }); }
   const v = +e.target.value;
   S.ws = v;
   send({ cmd: 'setSpend', res: 'w', val: v });

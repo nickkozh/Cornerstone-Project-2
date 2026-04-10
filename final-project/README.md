@@ -9,8 +9,8 @@ A resource-management game running on a Raspberry Pi Pico 2. Two physical dials 
 | File | Where it runs | What it does |
 |------|--------------|--------------|
 | `main.py` | Raspberry Pi Pico 2 | Full game logic, LED control, serial communication |
-| `bridge.py` | Your Mac/PC | Connects Pico serial to the browser over WebSocket |
-| `index.html` | Your browser | Game interface — identical to the simulation |
+| `bridge.py` | Your Mac/PC | Connects Pico serial to the browser over WebSocket; auto-restarts if the Pico disconnects |
+| `index.html` | Your browser | Game interface |
 
 ---
 
@@ -55,13 +55,16 @@ Once flashed, `main.py` runs automatically every time the Pico powers on.
 ### Step 2 — Install Python dependencies (one time)
 
 ```bash
-pip install pyserial websockets
+python3 -m venv venv
+source venv/bin/activate      # macOS/Linux
+# venv\Scripts\activate       # Windows
+pip install -r requirements.txt
 ```
 
 ### Step 3 — Start the bridge
 
 ```bash
-cd path/to/final-project
+source venv/bin/activate
 python3 bridge.py
 ```
 
@@ -82,9 +85,11 @@ WebSocket :  ws://localhost:8765
 Press Ctrl-C to quit.
 ```
 
+If the Pico is unplugged or rebooted (e.g. after re-flashing), the bridge detects the disconnect and restarts automatically — no need to rerun it manually.
+
 ### Step 4 — Open the interface
 
-Go to **http://localhost:8080** in your browser. The game starts immediately.
+Go to **http://localhost:8080** in your browser and click **Start Game**.
 
 ---
 
@@ -97,16 +102,27 @@ Each resource (electricity and water) has a spend level set by the physical dial
 | Zone | Spend | Effect |
 |------|-------|--------|
 | Too low | 0–10% | Resource slowly bleeds. Stay here too long and it locks up for 15 s. |
-| Sweet spot | 10–35% | Resource recharges. You earn cards every 8 s (if level > 50%). |
+| Sweet spot | 10–35% | Resource recharges at 2%/s (faster with upgrades). You earn cards every 8 s (if level > 50%). |
 | Too high | 35–100% | Resource drains fast. Hit 0% and it locks out for 15 s. |
+
+### Input mode
+
+The game supports two input modes, switchable at any time using the button in the top-right of the connection bar:
+
+- **Digital sliders** (default) — use the on-screen sliders in the browser.
+- **Physical dials** — use the potentiometers wired to the Pico.
+
+The game switches modes automatically:
+- Turn a physical dial more than 5% → switches to **Physical dials**.
+- Move an on-screen slider → switches to **Digital sliders**.
 
 ### Cards and upgrades
 
 - Earn **electricity cards** by keeping electricity spend in the sweet spot while the electricity level is above 50%.
 - Earn **water cards** the same way for water.
 - Spend cards on upgrades:
-  - **Solar panel** (3 electricity cards + 1 water card) — boosts electricity regen. Up to 8 panels (2.2× regen at max).
-  - **Water tower** (3 water cards + 1 electricity card) — boosts water regen. Up to 4 towers (1.9× regen at max).
+  - **Solar panel** (3 electricity cards + 1 water card) — boosts electricity regen. Up to 6 panels.
+  - **Water tower** (3 water cards + 1 electricity card) — boosts water regen. Up to 3 towers.
 
 ### Events
 
@@ -119,9 +135,11 @@ Each resource (electricity and water) has a spend level set by the physical dial
 
 During any lockout the LED bar for that resource flashes. It slowly recovers on its own.
 
-### Dials vs sliders
+### Sessions
 
-The physical dials and the browser sliders both work at the same time. Moving a slider on the browser overrides the dial. Turning the physical dial more than ~3% takes back control. During a lockout, both are disabled and the spend is forced to zero.
+Click **End Session** to stop the game. All LEDs turn off and the Pico idles until a new session is started. Each session is logged to `sessions.csv` with the date, start/end times, and duration.
+
+Click **Play Again** on the end screen to reset and start a new session.
 
 ---
 
@@ -134,9 +152,9 @@ The physical dials and the browser sliders both work at the same time. Moving a 
    │  LED bar graphs                     (serves HTML)         :8765
    │  ADC pot reading                         │
    │                                    [index.html]
-   ◀── Commands (setSpend / upgrade) ──────────┘
+   ◀── Commands (setSpend / setInputMode / upgrade / endGame) ───┘
 ```
 
 - **Pico** owns all game state and sends the full state as a JSON line every 50 ms.
-- **bridge.py** relays that JSON to WebSocket clients and forwards browser commands back to the Pico over serial.
+- **bridge.py** relays that JSON to WebSocket clients and forwards browser commands back to the Pico over serial. It also handles session timing and CSV logging.
 - **index.html** is a display + input layer only — no game logic runs in the browser.

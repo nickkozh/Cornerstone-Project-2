@@ -94,11 +94,17 @@ def _http_thread():
 # ── Serial reader thread ──────────────────────────────────────────────────────
 def _serial_thread(ser):
     global _latest
+    _consecutive_errors = 0
     while True:
         try:
             raw = ser.readline()
             if not raw:
+                _consecutive_errors += 1
+                if _consecutive_errors >= 5:
+                    print('[serial] Pico disconnected — exiting so bridge can restart.', file=sys.stderr)
+                    os._exit(1)
                 continue
+            _consecutive_errors = 0
             line = raw.decode('utf-8', errors='ignore').strip()
             if not line.startswith('{'):
                 continue   # ignore MicroPython boot messages / REPL output
@@ -110,12 +116,17 @@ def _serial_thread(ser):
         except json.JSONDecodeError:
             pass
         except Exception as e:
+            _consecutive_errors += 1
             print(f'[serial] {e}', file=sys.stderr)
-            time.sleep(0.1)
+            if _consecutive_errors >= 5:
+                print('[serial] Pico disconnected — exiting so bridge can restart.', file=sys.stderr)
+                os._exit(1)
+            time.sleep(0.2)
 
 
 # ── WebSocket server ──────────────────────────────────────────────────────────
 async def _ws_handler(websocket):
+    global _ws_clients
     _ws_clients.add(websocket)
     print(f'Browser connected  ({len(_ws_clients)} client(s))')
     # Send current snapshot immediately so the UI isn't blank on connect
@@ -153,6 +164,13 @@ async def _ws_handler(websocket):
                     _session_start = None
                 else:
                     duration_s = 0
+                # Tell Pico to turn off LEDs
+                ser = _ser_ref[0]
+                if ser and ser.is_open:
+                    try:
+                        ser.write((json.dumps({'cmd': 'endGame'}) + '\n').encode())
+                    except Exception as e:
+                        print(f'[serial write] {e}', file=sys.stderr)
                 # Broadcast session_ended to all browsers
                 payload = json.dumps({'type': 'session_ended', 'duration_s': duration_s})
                 dead = set()
@@ -180,7 +198,7 @@ async def _ws_handler(websocket):
 
 async def _broadcast_loop():
     """Relay lines from the serial queue to all connected WebSocket clients."""
-    global _ws_queue
+    global _ws_queue, _ws_clients
     _ws_queue = asyncio.Queue()
     while True:
         line = await _ws_queue.get()

@@ -67,7 +67,8 @@ def set_bar(leds, level, locked, flash_on):
         elif level >= (i + 1) * seg:
             led.duty_u16(DUTY_MAX)
         elif level > i * seg:
-            led.duty_u16(int(DUTY_MAX * (level - i * seg) / seg))
+            frac = (level - i * seg) / seg
+            led.duty_u16(int(DUTY_MAX * (frac ** 0.5)))
         else:
             led.duty_u16(0)
 
@@ -89,6 +90,8 @@ S = {
     'ect': 0.0, 'wct': 0.0,            # card earn timers
     't': 0.0,
     '_web_e': None, '_web_w': None,    # web slider overrides (None = pot in control)
+    'pots': False,                     # False = digital sliders only; True = physical pots active
+    'ended': False,                    # True = session ended, LEDs off until resetGame
 }
 
 _pending_evts = []   # events queued from commands (e.g. upgrade purchased)
@@ -125,9 +128,8 @@ def update_res(rk, sk, bk, sgk, eltk, estk, ectk, ck, mul, dt):
         S[rk] = max(0.0, S[rk] - ((sp - NT) / (100.0 - NT)) * DRAIN * dt)
         S[estk] = 0.0
     elif sp >= LT:
-        # Sweet spot: regen (peaks at LT, tapers to 0 near NT)
-        frac = (NT - sp) / (NT - LT)
-        S[rk] = min(100.0, S[rk] + frac * REGEN * mul * dt)
+        # Sweet spot: full regen anywhere in the zone
+        S[rk] = min(100.0, S[rk] + REGEN * mul * dt)
         S[estk] = max(0.0, S[estk] - dt * 0.8)   # bleed stagnation timer back down
     else:
         # Stagnation zone: slow bleed + stagnation build timer
@@ -202,7 +204,15 @@ def _handle_cmd(line):
         return
     c = cmd.get('cmd', '')
 
-    if c == 'setSpend':
+    if c == 'endGame':
+        S['ended'] = True
+        for led in water_leds + elec_leds:
+            led.duty_u16(0)
+
+    elif c == 'setInputMode':
+        S['pots'] = bool(cmd.get('pots', False))
+
+    elif c == 'setSpend':
         v = float(cmd.get('val', 0.0))
         if cmd.get('res') == 'e':
             S['_web_e'] = v
@@ -211,10 +221,10 @@ def _handle_cmd(line):
 
     elif c == 'upgrade':
         t = cmd.get('type', '')
-        if t == 'solar' and S['sp'] < 8 and S['ec'] >= 3 and S['wc'] >= 1:
+        if t == 'solar' and S['sp'] < 6 and S['ec'] >= 3 and S['wc'] >= 1:
             S['ec'] -= 3; S['wc'] -= 1; S['sp'] += 1
             _pending_evts.append('solar_bought')
-        elif t == 'tower' and S['wt'] < 4 and S['wc'] >= 3 and S['ec'] >= 1:
+        elif t == 'tower' and S['wt'] < 3 and S['wc'] >= 3 and S['ec'] >= 1:
             S['wc'] -= 3; S['ec'] -= 1; S['wt'] += 1
             _pending_evts.append('tower_bought')
 
@@ -230,6 +240,8 @@ def _handle_cmd(line):
         S['ect'] = 0.0; S['wct'] = 0.0
         S['t'] = 0.0
         S['_web_e'] = None; S['_web_w'] = None
+        S['pots'] = False
+        S['ended'] = False
         _pending_evts.append('game_reset')
 
 def send_state(events):
@@ -238,6 +250,7 @@ def send_state(events):
         'es':    round(S['es'],    1), 'ws':    round(S['ws'],    1),
         'ec':    S['ec'],              'wc':    S['wc'],
         'sp':    S['sp'],              'wt':    S['wt'],
+        'pots':  S['pots'],
         'eb':    round(S['eb'],    1), 'wd':    round(S['wd'],    1),
         'stagE': round(S['stagE'], 1), 'stagW': round(S['stagW'], 1),
         'elt':   round(S['elt'],   1), 'wlt':   round(S['wlt'],   1),
@@ -249,10 +262,10 @@ def send_state(events):
     print(json.dumps(out))   # print() flushes stdout automatically
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
-_last_ms   = time.ticks_ms()
-_flash_on  = False
-_flash_ctr = 0
-_prev_pot_e = 0.0
+_last_ms    = time.ticks_ms()
+_flash_on   = False
+_flash_ctr  = 0
+_prev_pot_e = 0.0   # raw ADC reading last tick (always updated regardless of mode)
 _prev_pot_w = 0.0
 
 while True:
@@ -264,18 +277,35 @@ while True:
     # Read any incoming commands from the bridge
     try_read_cmd()
 
-    # Read potentiometers
-    pe = read_pot(POT_ELEC)
-    pw = read_pot(POT_WATER)
+    # Session ended — LEDs already off; just wait for resetGame
+    if S['ended']:
+        time.sleep_ms(LOOP_MS)
+        continue
 
-    # Web override arbitration: cancel override if pot moved > 3% since last tick
-    if S['_web_e'] is not None and abs(pe - _prev_pot_e) > 3.0:
-        S['_web_e'] = None
-    if S['_web_w'] is not None and abs(pw - _prev_pot_w) > 3.0:
-        S['_web_w'] = None
+    # Always read raw ADC values (used for auto-switching detection)
+    raw_e = read_pot(POT_ELEC)
+    raw_w = read_pot(POT_WATER)
 
-    _prev_pot_e = pe
-    _prev_pot_w = pw
+    if S['pots']:
+        # Physical mode: pot movement > 3% cancels any web override
+        if S['_web_e'] is not None and abs(raw_e - _prev_pot_e) > 3.0:
+            S['_web_e'] = None
+        if S['_web_w'] is not None and abs(raw_w - _prev_pot_w) > 3.0:
+            S['_web_w'] = None
+        pe, pw = raw_e, raw_w
+    else:
+        # Digital mode: if a pot moves >5% in one tick, auto-switch to physical
+        if abs(raw_e - _prev_pot_e) > 5.0 or abs(raw_w - _prev_pot_w) > 5.0:
+            S['pots'] = True
+            S['_web_e'] = None
+            S['_web_w'] = None
+            pe, pw = raw_e, raw_w
+        else:
+            pe = S['_web_e'] if S['_web_e'] is not None else 0.0
+            pw = S['_web_w'] if S['_web_w'] is not None else 0.0
+
+    _prev_pot_e = raw_e
+    _prev_pot_w = raw_w
 
     # Apply spend values; force 0 during any lockout
     if S['eb'] <= 0 and S['stagE'] <= 0:
