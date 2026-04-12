@@ -1,56 +1,39 @@
-# main.py — Raspberry Pi Pico 2 firmware
-# Full game logic + 16-LED control + USB-serial JSON bridge
-#
-# Wiring:
-#   GP26 (ADC0)  — Water potentiometer (wiper to GP26, sides to 3V3 & GND)
-#   GP27 (ADC1)  — Electricity potentiometer
-#   GP0–GP7      — Water LEDs (anode to GPIO, cathode to GND, NO resistors needed)
-#   GP8–GP15     — Electricity LEDs
-#
-# Software resistor: PWM at 500 Hz, duty capped at 15% of full scale.
-# That keeps average LED current ~0.5–1 mA — safe for both GPIO and LED,
-# no external resistor required.
-
 import sys, json, time, uselect
 from machine import ADC, PWM, Pin
 
-# ── Pin assignments ───────────────────────────────────────────────────────────
-POT_WATER = ADC(26)   # GP26 / ADC0
-POT_ELEC  = ADC(27)   # GP27 / ADC1
+POT_WATER = ADC(26)
+POT_ELEC  = ADC(27)
 
 WATER_LED_PINS = [0, 1, 2, 3, 4, 5, 6, 7]
 ELEC_LED_PINS  = [8, 9, 10, 11, 12, 13, 14, 15]
 
-# ── Software resistor constants ───────────────────────────────────────────────
-PWM_FREQ = 500        # Hz
-DUTY_MAX = 9830       # 15% × 65535 — caps average current without a resistor
+PWM_FREQ = 500
+DUTY_MAX = 9830   # 15% of 65535
 
-# ── Game constants (match the web simulation exactly) ────────────────────────
-NT       = 35.0       # Upper threshold: above this → drain
-LT       = 10.0       # Lower threshold: below this → stagnation
-DRAIN    = 1.5        # Max drain rate (%/s at 100% spend)
-REGEN    = 0.8        # Max regen rate (%/s in sweet spot, with multiplier)
-STAG_DR  = 0.5        # Slow bleed rate while stagnating (%/s max)
-BLKOUT_D = 15.0       # Lockout duration for any event (s)
-BLKOUT_R = 0.2        # Passive regen during lockout (%/s)
-LOW_TH   = 10.0       # Chronic-low threshold (%)
-CRISIS_T = 30.0       # Seconds at chronic-low before crisis fires
-STAG_T   = 20.0       # Stagnation build time before lockout (s)
-CARD_INT = 12.0       # Seconds between card grants
-CARD_MIN = 50.0       # Resource must be above this to earn cards
-LOOP_MS  = 50         # Main loop interval (20 Hz)
+NT       = 35.0
+LT       = 10.0
+DRAIN    = 1.5
+REGEN    = 0.8
+STAG_DR  = 0.5
+BLKOUT_D = 15.0
+BLKOUT_R = 0.2
+LOW_TH   = 10.0
+CRISIS_T = 30.0
+STAG_T   = 20.0
+CARD_INT = 12.0
+CARD_MIN = 50.0
+LOOP_MS  = 50
 
 def solar_mult(p): return 1.0 + (p - 2) * 0.2
 def tower_mult(t): return 1.0 + (t - 1) * 0.3
 
-# ── LED bar setup ─────────────────────────────────────────────────────────────
 def make_pwm_leds(pins):
     out = []
     for p in pins:
         try:
-            pin = Pin(p, Pin.OUT, drive=Pin.DRIVE_0)  # minimum 2 mA drive
+            pin = Pin(p, Pin.OUT, drive=Pin.DRIVE_0)
         except (TypeError, AttributeError):
-            pin = Pin(p, Pin.OUT)                      # fallback for older builds
+            pin = Pin(p, Pin.OUT)
         out.append(PWM(pin, freq=PWM_FREQ, duty_u16=0))
     return out
 
@@ -58,11 +41,7 @@ water_leds = make_pwm_leds(WATER_LED_PINS)
 elec_leds  = make_pwm_leds(ELEC_LED_PINS)
 
 def set_bar(leds, level, locked, flash_on):
-    """Render a resource level (0–100) as a PWM bar graph on 8 LEDs.
-    LEDs that are 'on' scale in brightness with the overall resource level.
-    During lockout the bar flashes dim to signal the event."""
     n, seg = len(leds), 100.0 / len(leds)
-    # Brightness scales from 20% at low level to 100% at full level
     brightness = 0.2 + 0.8 * (level / 100.0)
     scaled_max = int(DUTY_MAX * brightness)
     for i, led in enumerate(leds):
@@ -76,9 +55,8 @@ def set_bar(leds, level, locked, flash_on):
         else:
             led.duty_u16(0)
 
-# ── ADC reading ───────────────────────────────────────────────────────────────
 def read_pot(adc):
-    for _ in range(8):      # flush: let ADC settle on new channel
+    for _ in range(8):
         adc.read_u16()
         time.sleep_us(50)
     total = 0
@@ -86,66 +64,57 @@ def read_pot(adc):
         total += adc.read_u16()
         time.sleep_us(50)
     pct = (total / 4) / 65535.0 * 100.0
-    return 0.0 if pct < 1.5 else pct   # 1.5% deadband kills idle noise
+    return 0.0 if pct < 1.5 else pct
 
-# ── Game state ────────────────────────────────────────────────────────────────
 S = {
-    'e': 50.0, 'w': 50.0,              # resource levels
-    'es': 0.0,  'ws': 0.0,             # effective spend (pot or web override)
-    'sp': 2,    'wt': 1,               # solar panels, water towers
-    'ec': 0,    'wc': 0,               # card counts
-    'eb': 0.0,  'wd': 0.0,             # blackout / drought timers
-    'stagE': 0.0, 'stagW': 0.0,        # stagnation lockout timers
-    'elt': 0.0, 'wlt': 0.0,            # chronic-low timers
-    'est': 0.0, 'wst': 0.0,            # stagnation build timers
-    'ect': 0.0, 'wct': 0.0,            # card earn timers
+    'e': 50.0, 'w': 50.0,
+    'es': 0.0,  'ws': 0.0,
+    'sp': 2,    'wt': 1,
+    'ec': 0,    'wc': 0,
+    'eb': 0.0,  'wd': 0.0,
+    'stagE': 0.0, 'stagW': 0.0,
+    'elt': 0.0, 'wlt': 0.0,
+    'est': 0.0, 'wst': 0.0,
+    'ect': 0.0, 'wct': 0.0,
     't': 0.0,
-    '_web_e': None, '_web_w': None,    # web slider overrides (None = pot in control)
-    'pots': False,                     # False = digital sliders only; True = physical pots active
-    'ended': False,                    # True = session ended, LEDs off until resetGame
+    '_web_e': None, '_web_w': None,
+    'pots': False,
+    'ended': False,
 }
 
-_pending_evts = []   # events queued from commands (e.g. upgrade purchased)
+_pending_evts = []
 
-# ── Game logic ────────────────────────────────────────────────────────────────
 def update_res(rk, sk, bk, sgk, eltk, estk, ectk, ck, mul, dt):
-    """Update one resource for one time step. Returns list of event strings."""
     events = []
     sp = S[sk]
 
-    # Overuse lockout (blackout / drought)
     if S[bk] > 0:
         S[bk] -= dt
         S[rk] = min(100.0, S[rk] + BLKOUT_R * dt)
         if S[bk] <= 0:
             S[bk] = 0.0
-            S[sk] = 20.0   # reset slider to 20% so player starts in sweet spot
+            S[sk] = 20.0
             events.append('end_blackout' if rk == 'e' else 'end_drought')
         S[estk] = 0.0
         return events
 
-    # Stagnation lockout
     if S[sgk] > 0:
         S[sgk] -= dt
         S[rk] = min(100.0, S[rk] + BLKOUT_R * dt)
         if S[sgk] <= 0:
             S[sgk] = 0.0
-            S[sk] = 20.0   # reset slider to 20% so player starts in sweet spot
+            S[sk] = 20.0
             events.append('end_stag_e' if rk == 'e' else 'end_stag_w')
         S[estk] = 0.0
         return events
 
-    # Normal resource update
     if sp > NT:
-        # Overuse zone: drain
         S[rk] = max(0.0, S[rk] - ((sp - NT) / (100.0 - NT)) * DRAIN * dt)
         S[estk] = 0.0
     elif sp >= LT:
-        # Sweet spot: full regen anywhere in the zone
         S[rk] = min(100.0, S[rk] + REGEN * mul * dt)
-        S[estk] = max(0.0, S[estk] - dt * 0.8)   # bleed stagnation timer back down
+        S[estk] = max(0.0, S[estk] - dt * 0.8)
     else:
-        # Stagnation zone: slow bleed + stagnation build timer
         depth = (LT - sp) / LT
         S[rk] = max(0.0, S[rk] - depth * STAG_DR * dt)
         S[estk] = min(STAG_T, S[estk] + depth * dt)
@@ -153,11 +122,10 @@ def update_res(rk, sk, bk, sgk, eltk, estk, ectk, ck, mul, dt):
             S[estk] = 0.0
             if S[sgk] <= 0:
                 S[sgk] = BLKOUT_D
-                S[sk]  = 0.0       # force spend to 0 during lockout
+                S[sk]  = 0.0
                 events.append('stag_e' if rk == 'e' else 'stag_w')
             return events
 
-    # Blackout / drought: resource hit 0 from overuse
     if S[rk] <= 0.0 and sp > NT:
         S[rk] = 0.0
         if S[bk] <= 0:
@@ -166,7 +134,6 @@ def update_res(rk, sk, bk, sgk, eltk, estk, ectk, ck, mul, dt):
             events.append('blackout' if rk == 'e' else 'drought')
         return events
 
-    # Chronic-low crisis
     if S[rk] < LOW_TH:
         S[eltk] += dt
         if S[eltk] >= CRISIS_T:
@@ -175,7 +142,6 @@ def update_res(rk, sk, bk, sgk, eltk, estk, ectk, ck, mul, dt):
     else:
         S[eltk] = max(0.0, S[eltk] - dt * 0.5)
 
-    # Card earning (sweet spot only, resource > 50%)
     if LT <= sp <= NT and S[rk] > CARD_MIN and S[ck] < 10:
         S[ectk] += dt
         if S[ectk] >= CARD_INT:
@@ -187,13 +153,11 @@ def update_res(rk, sk, bk, sgk, eltk, estk, ectk, ck, mul, dt):
 
     return events
 
-# ── Serial I/O ────────────────────────────────────────────────────────────────
 _poller = uselect.poll()
 _poller.register(sys.stdin, uselect.POLLIN)
 _rbuf   = ''
 
 def try_read_cmd():
-    """Non-blocking read: drain all available characters from stdin."""
     global _rbuf
     while True:
         if not _poller.poll(0):
@@ -272,13 +236,12 @@ def send_state(events):
         't':     round(S['t'],     1),
         'ev':    events,
     }
-    print(json.dumps(out))   # print() flushes stdout automatically
+    print(json.dumps(out))
 
-# ── Main loop ─────────────────────────────────────────────────────────────────
 _last_ms    = time.ticks_ms()
 _flash_on   = False
 _flash_ctr  = 0
-_prev_pot_e = 0.0   # raw ADC reading last tick (always updated regardless of mode)
+_prev_pot_e = 0.0
 _prev_pot_w = 0.0
 
 while True:
@@ -287,28 +250,22 @@ while True:
     _last_ms = now_ms
     if dt <= 0: dt = 0.001
 
-    # Read any incoming commands from the bridge
     try_read_cmd()
 
-    # Session ended — LEDs already off; just wait for resetGame
     if S['ended']:
         time.sleep_ms(LOOP_MS)
         continue
 
-    # Always read raw ADC values (used for auto-switching detection)
-    # Read each channel twice: first read flushes crosstalk from the other channel
     raw_w = read_pot(POT_WATER)
     raw_e = read_pot(POT_ELEC)
 
     if S['pots']:
-        # Physical mode: pot movement > 3% cancels any web override
         if S['_web_e'] is not None and abs(raw_e - _prev_pot_e) > 3.0:
             S['_web_e'] = None
         if S['_web_w'] is not None and abs(raw_w - _prev_pot_w) > 3.0:
             S['_web_w'] = None
         pe, pw = raw_e, raw_w
     else:
-        # Digital mode: if a pot moves >5% in one tick, auto-switch to physical
         if abs(raw_e - _prev_pot_e) > 5.0 or abs(raw_w - _prev_pot_w) > 5.0:
             S['pots'] = True
             S['_web_e'] = None
@@ -321,7 +278,6 @@ while True:
     _prev_pot_e = raw_e
     _prev_pot_w = raw_w
 
-    # Apply spend values; force 0 during any lockout
     if S['eb'] <= 0 and S['stagE'] <= 0:
         S['es'] = S['_web_e'] if S['_web_e'] is not None else pe
     else:
@@ -332,7 +288,6 @@ while True:
     else:
         S['ws'] = 0.0
 
-    # Advance game logic
     S['t'] += dt
     evts  = []
     prev_es, prev_ws = S['es'], S['ws']
@@ -340,30 +295,24 @@ while True:
                         solar_mult(S['sp']), dt)
     evts += update_res('w', 'ws', 'wd',  'stagW', 'wlt', 'wst', 'wct', 'wc',
                         tower_mult(S['wt']), dt)
-    # If event reset a spend value, sync the web slider override too
     if S['es'] == 20.0 and prev_es != 20.0:
         S['_web_e'] = 20.0
     if S['ws'] == 20.0 and prev_ws != 20.0:
         S['_web_w'] = 20.0
 
-    # Add any events from commands (upgrades, etc.)
     evts += _pending_evts
     _pending_evts = []
 
-    # Flash ticker: toggle every ~300 ms for lockout animation
     _flash_ctr += 1
     if _flash_ctr >= 6:
         _flash_ctr = 0
         _flash_on  = not _flash_on
 
-    # Drive LEDs
     set_bar(elec_leds,  S['e'], S['eb']  > 0 or S['stagE'] > 0, _flash_on)
     set_bar(water_leds, S['w'], S['wd']  > 0 or S['stagW'] > 0, _flash_on)
 
-    # Send state to host over USB serial
     send_state(evts)
 
-    # Sleep for remainder of loop interval
     elapsed = time.ticks_diff(time.ticks_ms(), now_ms)
     rem = LOOP_MS - elapsed
     if rem > 0:

@@ -4,17 +4,149 @@ A resource-management game running on a Raspberry Pi Pico 2. Two physical dials 
 
 ---
 
-## Quick start
+## Quick start (macOS)
 
-1. **Start the bridge** on your MacBook:
-   ```bash
-   cd "Desktop/Spring '26 HW/Cornerstone/Project 2"
-   pkill -f bridge.py; sleep 1; source venv/bin/activate && python3 bridge.py
-   ```
-2. **Plug in the Pico** via USB — the bridge will detect it automatically.
-3. **Make sure Tailscale is running** on both your MacBook and iPad.
-4. **Make sure NordVPN is off** on both devices.
-5. **On the iPad**, open Safari and go to `http://<macbook-tailscale-ip>:8080`.
+### First time only — do this once
+
+**1. Open Terminal**
+- Press `Cmd + Space`, type `Terminal`, press Enter.
+
+**2. Navigate to the project folder**
+```bash
+cd "Desktop/Spring '26 HW/Cornerstone/Project 2"
+```
+> Change the path if you put the folder somewhere else.
+
+**3. Create a virtual environment**
+```bash
+python3 -m venv venv
+```
+
+**4. Activate the virtual environment**
+```bash
+source venv/bin/activate
+```
+You should see `(venv)` appear at the start of the line. You'll need to do this step every time you open a new terminal.
+
+**5. Install dependencies**
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+### Every time you want to run the game
+
+**1. Open Terminal** (`Cmd + Space` → `Terminal` → Enter)
+
+**2. Navigate to the project folder**
+```bash
+cd "Desktop/Spring '26 HW/Cornerstone/Project 2"
+```
+
+**3. Activate the virtual environment**
+```bash
+source venv/bin/activate
+```
+
+**4. Plug in the Pico** via USB cable.
+
+**5. Start the bridge**
+```bash
+pkill -f bridge.py; sleep 1; python3 bridge.py
+```
+> The `pkill` part just closes any old bridge that might still be running. Safe to ignore any "no process found" message.
+
+You should see something like:
+```
+Auto-detected Pico on /dev/tty.usbmodem101
+Interface:   http://localhost:8080
+WebSocket :  ws://localhost:8765
+Press Ctrl-C to quit.
+```
+If it says "No serial ports found", make sure the Pico is plugged in and try again.
+
+**6. Open the game** — open your browser and go to:
+```
+http://localhost:8080
+```
+
+**7. To stop the bridge**, click back on the Terminal window and press `Ctrl + C`.
+
+---
+
+## Quick start (Windows)
+
+### First time only — do this once
+
+**1. Install Python**
+- Go to [python.org/downloads](https://python.org/downloads) and download the latest Python installer.
+- Run it. **Check the box that says "Add Python to PATH"** before clicking Install.
+
+**2. Open a terminal**
+- Press `Windows + R`, type `cmd`, press Enter.
+
+**3. Navigate to the project folder**
+```
+cd "%USERPROFILE%\Downloads\Project 2"
+```
+> Change the path above to wherever you put the project folder.
+
+**4. Create a virtual environment**
+```
+python -m venv venv
+```
+
+**5. Activate the virtual environment**
+```
+venv\Scripts\activate
+```
+You should see `(venv)` appear at the start of the line. You'll need to do this step every time you open a new terminal.
+
+**6. Install dependencies**
+```
+pip install -r requirements.txt
+```
+
+---
+
+### Every time you want to run the game
+
+**1. Open a terminal** (`Windows + R` → `cmd` → Enter)
+
+**2. Navigate to the project folder**
+```
+cd "%USERPROFILE%\Downloads\Project 2"
+```
+
+**3. Activate the virtual environment**
+```
+venv\Scripts\activate
+```
+
+**4. Plug in the Pico** via USB cable.
+
+**5. Start the bridge**
+```
+python bridge.py
+```
+You should see something like:
+```
+Auto-detected Pico on COM3
+Interface:   http://localhost:8080
+WebSocket :  ws://localhost:8765
+Press Ctrl-C to quit.
+```
+If it says "No serial ports found", make sure the Pico is plugged in and try again.
+
+**6. Open the game** — open your browser and go to:
+```
+http://localhost:8080
+```
+
+**7. To stop the bridge**, click back on the terminal window and press `Ctrl + C`.
+
+> **If the bridge was already running** from a previous session and you get an error about the port being in use, close the old terminal window first, then open a new one and start from step 1.
 
 ---
 
